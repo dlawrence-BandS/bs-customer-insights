@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer Insights | Barker &amp; Stonehouse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1c2740;--ivory:#f8f4ec;--line:#d9d2c3;--teal:#1f7a78;--brass:#a67c37;--muted:#5d6577;--good:#1f7a58;--bad:#a23b3b}
+*{box-sizing:border-box}
+html{scroll-padding-top:120px}
+body{margin:0;background:var(--ivory);color:var(--ink);font:400 15px/1.5 "Source Sans 3",system-ui,sans-serif}
+h1,h2,h3,.big{font-family:"Playfair Display",Georgia,serif;font-weight:500;margin:0}
+header{background:var(--ink);color:var(--ivory);padding:18px 32px;display:flex;flex-wrap:wrap;gap:16px 32px;align-items:center;justify-content:space-between}
+header h1{font-size:24px}
+header .sub{font-size:13px;color:#c9cfdd;margin-top:2px}
+.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.controls label{font-size:13px;color:#c9cfdd;display:flex;gap:8px;align-items:center}
+select,button{font:inherit}
+select{background:var(--ivory);color:var(--ink);border:1px solid var(--line);border-radius:3px;padding:5px 8px}
+.signin{background:var(--brass);color:#fff;border:0;border-radius:3px;padding:8px 16px;font-weight:600;cursor:pointer}
+.signin:hover{background:#8d6a2e}
+nav{position:sticky;top:0;z-index:5;background:var(--ivory);border-bottom:1px solid var(--line);padding:0 32px;display:flex;flex-wrap:wrap;gap:4px 28px}
+nav button{background:none;border:0;border-bottom:3px solid transparent;padding:14px 0 11px;color:var(--muted);cursor:pointer;font-weight:600}
+nav button[aria-current="page"]{color:var(--ink);border-bottom-color:var(--brass)}
+nav button:hover{color:var(--ink)}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+main{padding:28px 32px 60px;max-width:1500px;margin:0 auto}
+#view{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:40px}
+.panel{border-top:1px solid #1c274055;padding-top:12px;min-width:0}
+.panel.wide{grid-column:1/-1}
+.panel h3{font-size:19px}
+.note{margin:4px 0 12px;color:var(--muted);font-size:13px;max-width:78ch}
+.body{position:relative}
+.tiles{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:26px 30px}
+.tile{border-left:3px solid var(--brass);padding-left:14px}
+.tile .lab{font-size:13px;color:var(--muted)}
+.tile .big{font-size:32px;line-height:1.15;margin:2px 0}
+.tile .chg{font-size:13px}
+.tile .nt{font-size:12px;color:var(--muted)}
+.good{color:var(--good)}.bad{color:var(--bad)}
+.moves{list-style:none;margin:0;padding:0;columns:2 380px;column-gap:40px}
+.moves li{padding:6px 0;break-inside:avoid;border-bottom:1px solid var(--line)}
+.tw{overflow:auto;max-height:560px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{text-align:left;font-weight:600;font-size:13px;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--ink);position:sticky;top:0;background:var(--ivory)}
+td{padding:6px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th.r,td.r{text-align:right;font-variant-numeric:tabular-nums}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:3px;margin:0 0 10px;overflow:hidden}
+.seg button{border:0;background:none;padding:5px 12px;cursor:pointer;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--ivory)}
+.msg{grid-column:1/-1;max-width:70ch;padding:8px 0}
+.msg h2{font-size:28px;margin-bottom:8px}
+.err{color:var(--bad)}
+footer{max-width:1500px;margin:0 auto;padding:0 32px 40px;color:var(--muted);font-size:13px}
+footer p{max-width:100ch;margin:4px 0}
+@media (max-width:640px){header,nav,main,footer{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Customer insights</h1><div class="sub" id="asof">Barker &amp; Stonehouse</div></div>
+  <div class="controls">
+    <label>Channel <select id="f-channel"><option value="all">Online and store</option><option value="online">Online</option><option value="offline">Store</option></select></label>
+    <label>Months shown <select id="f-months"><option value="6">6</option><option value="12" selected>12</option><option value="24">24</option><option value="0">All</option></select></label>
+    <button class="signin" id="signin" type="button">Sign in with Google</button>
+  </div>
+</header>
+<nav id="tabs" aria-label="Dashboard sections"></nav>
+<main><div id="view"></div></main>
+<footer id="foot"></footer>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+(function(){
+'use strict';
+var PROJECT='commanding-air-450109-p0', DS=PROJECT+'.customer_insights', LOCATION='europe-west2';
+var CLIENT_ID='46227372300-rk63ag0caqgd7n12gjd0nt7f2qi7llqr.apps.googleusercontent.com';
+var TABLES=['s_ads_monthly','s_area_profile','s_area_vs_national','s_attach_monthly','s_attribute_monthly','s_audience_sizes','s_cancel_category','s_category_monthly','s_channel_area','s_channel_monthly','s_click_collect_customers','s_click_collect_monthly','s_cohorts','s_contact_snapshot','s_customer_type_monthly','s_distance_behaviour','s_email_campaigns','s_email_monthly','s_journey_monthly','s_landing_period','s_lapsed_pool','s_list_growth','s_next_category','s_omnichannel','s_order_mix','s_product_period','s_sales_monthly','s_source_monthly','s_store_catchment','s_swatch_cohorts','s_swatch_fabrics','s_time_to_buy_category','s_winback_pool'];
+var TABS=[['headline','Headline'],['customers','Customers and retention'],['products','What people buy'],['journey','Journey and channels'],['audiences','Audiences and email'],['places','Where customers live'],['store','Store and online']];
+var D={}, token=null, charts=[], state={tab:'headline',channel:'all',months:12,attr:'colour',adDim:'age'};
+var PAL=['#1c2740','#1f7a78','#a67c37','#5b7aa6','#7b5e8c','#8aa07a','#b5653a','#6b6b6b','#c9b27c','#3d9a96'];
+var $=function(s){return document.querySelector(s);};
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms);});};
+
+/* ---------- BigQuery ---------- */
+function cast(t,v){
+  if(v===null||v===undefined) return null;
+  if(t==='INTEGER'||t==='INT64'||t==='FLOAT'||t==='FLOAT64'||t==='NUMERIC') return Number(v);
+  if(t==='BOOLEAN'||t==='BOOL') return v==='true';
+  return v;
+}
+async function api(url,opt){
+  var r=await fetch(url,opt); var j=await r.json();
+  if(r.status===401){token=null; throw new Error('Your sign-in has expired. Sign in again.');}
+  if(j.error) throw new Error(j.error.message);
+  return j;
+}
+async function bq(sql){
+  var base='https://bigquery.googleapis.com/bigquery/v2/projects/'+PROJECT;
+  var h={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
+  var j=await api(base+'/queries',{method:'POST',headers:h,body:JSON.stringify({query:sql,useLegacySql:false,location:LOCATION,maxResults:10000,timeoutMs:60000})});
+  var job=j.jobReference.jobId;
+  while(!j.jobComplete){ await sleep(700); j=await api(base+'/queries/'+job+'?location='+LOCATION+'&maxResults=10000',{headers:h}); }
+  var fields=j.schema.fields, rows=j.rows||[], tok=j.pageToken;
+  while(tok){ var p=await api(base+'/queries/'+job+'?location='+LOCATION+'&maxResults=10000&pageToken='+tok,{headers:h}); rows=rows.concat(p.rows||[]); tok=p.pageToken; }
+  return rows.map(function(row){var o={}; fields.forEach(function(f,i){o[f.name]=cast(f.type,row.f[i].v);}); return o;});
+}
+async function loadAll(){
+  await Promise.all(TABLES.map(async function(t){ D[t]=await bq('SELECT * FROM `'+DS+'.'+t+'`'); }));
+}
+
+/* ---------- helpers ---------- */
+var now=new Date(), LAST=now.getFullYear()*12+now.getMonth()-1;
+var L12=[LAST-11,LAST], P12=[LAST-23,LAST-12];
+var mIdx=function(s){return +s.slice(0,4)*12+ +s.slice(5,7)-1;};
+var inR=function(r,w){var i=mIdx(r.month); return i>=w[0]&&i<=w[1];};
+var sel=function(rows,w){return rows.filter(function(r){return inR(r,w);});};
+var sum=function(rows,f){return rows.reduce(function(s,r){return s+(Number(r[f])||0);},0);};
+var grp=function(rows,kf,vf){var m=new Map(); rows.forEach(function(r){var k=kf(r); m.set(k,(m.get(k)||0)+(Number(vf(r))||0));}); return m;};
+var topN=function(m,n){return Array.from(m.entries()).sort(function(a,b){return b[1]-a[1];}).slice(0,n);};
+var months=function(rows){return Array.from(new Set(rows.map(function(r){return r.month.slice(0,7);}))).sort();};
+var shown=function(rows){var n=state.months; return rows.filter(function(r){var i=mIdx(r.month); return i<=LAST&&(!n||i>LAST-n);});};
+var chan=function(rows){return state.channel==='all'?rows:rows.filter(function(r){return r.channel===state.channel;});};
+var yoyRows=function(rows){return rows.filter(function(r){return r.channel===(state.channel==='offline'?'offline':'online');});};
+var lab=function(s){return new Date(s.slice(0,7)+'-01T00:00:00').toLocaleString('en-GB',{month:'short',year:'2-digit'});};
+var f={
+  n:function(v){return v==null||isNaN(v)?'–':Math.round(v).toLocaleString('en-GB');},
+  gbp:function(v){if(v==null||isNaN(v)) return '–'; var a=Math.abs(v); return (v<0?'-':'')+(a>=1e6?'£'+(a/1e6).toFixed(2)+'m':a>=1e3?'£'+Math.round(a/1e3)+'k':'£'+Math.round(a));},
+  p:function(v,d){return v==null||isNaN(v)?'–':v.toFixed(d==null?1:d)+'%';}
+};
+var ratio=function(a,b){return b?a/b*100:null;};
+var chg=function(c,p){return p?(c-p)/p*100:null;};
+function chgHtml(c,p,goodUp){
+  var x=chg(c,p); if(x==null) return '';
+  var up=x>=0, good=goodUp===false?!up:up;
+  return '<span class="'+(good?'good':'bad')+'">'+(up?'▲ ':'▼ ')+Math.abs(x).toFixed(1)+'% on last year</span>';
+}
+function snap(){
+  var d=D.s_contact_snapshot||[]; if(!d.length) return {};
+  var mx=d.map(function(r){return r.snapshot_date;}).sort().pop(), o={};
+  d.filter(function(r){return r.snapshot_date===mx;}).forEach(function(r){(o[r.dimension]=o[r.dimension]||{})[r.value]=r.contacts;});
+  o._date=mx; return o;
+}
+function ordered(obj,order){
+  obj=obj||{}; var keys=order.filter(function(k){return k in obj;}).concat(Object.keys(obj).filter(function(k){return order.indexOf(k)<0;}));
+  return [keys,keys.map(function(k){return obj[k];})];
+}
+
+/* ---------- builders ---------- */
+function clearView(){charts.forEach(function(c){c.destroy();}); charts=[]; $('#view').innerHTML='';}
+function panel(title,note,wide){
+  var el=document.createElement('section'); el.className='panel'+(wide?' wide':'');
+  el.innerHTML='<h3>'+title+'</h3>'+(note?'<p class="note">'+note+'</p>':'')+'<div class="body"></div>';
+  $('#view').appendChild(el); return el.querySelector('.body');
+}
+function toggle(body,opts,key){
+  var d=document.createElement('div'); d.className='seg';
+  opts.forEach(function(o){var b=document.createElement('button'); b.type='button'; b.textContent=o[1]; b.setAttribute('aria-pressed',String(state[key]===o[0])); b.onclick=function(){state[key]=o[0]; render();}; d.appendChild(b);});
+  body.appendChild(d);
+}
+function chart(title,note,type,labels,datasets,o){
+  o=o||{}; var b=panel(title,note,o.wide); var h=document.createElement('div'); h.style.height=(o.h||280)+'px'; h.style.position='relative';
+  var c=document.createElement('canvas'); h.appendChild(c); b.appendChild(h);
+  var hz=!!o.horizontal, yf=o.fmt||function(v){return v;};
+  var cfg={type:type,data:{labels:labels,datasets:datasets.map(function(d,i){
+      var ty=d.type||type;
+      return Object.assign({backgroundColor:PAL[i%PAL.length],borderColor:PAL[i%PAL.length],borderWidth:ty==='line'?2:0,pointRadius:ty==='line'?2:0,tension:.25},d);})},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,indexAxis:hz?'y':'x',
+      plugins:{legend:{display:datasets.length>1,position:'bottom'},tooltip:{callbacks:{label:function(c){var ff=c.dataset.fmt||yf; return (c.dataset.label?c.dataset.label+': ':'')+ff(hz?c.parsed.x:c.parsed.y);}}}},
+      scales:hz?{x:{stacked:!!o.stacked,beginAtZero:true,ticks:{callback:yf}},y:{stacked:!!o.stacked,grid:{display:false}}}
+               :{x:{stacked:!!o.stacked,grid:{display:false}},y:{stacked:!!o.stacked,beginAtZero:true,ticks:{callback:yf}}}}};
+  if(o.y1) cfg.options.scales.y1={position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{callback:o.y1}};
+  charts.push(new Chart(c,cfg)); return b;
+}
+function table(title,note,cols,rows,o){
+  o=o||{}; var b=panel(title,note,o.wide);
+  if(o.before) o.before(b);
+  var w=document.createElement('div'); w.className='tw';
+  w.innerHTML='<table><thead><tr>'+cols.map(function(c){return '<th class="'+(c.r?'r':'')+'">'+c.h+'</th>';}).join('')+'</tr></thead><tbody>'+
+    (rows.length?rows.map(function(r){return '<tr>'+cols.map(function(c){return '<td class="'+(c.r?'r':'')+'"'+(c.s?' style="'+c.s(r)+'"':'')+'>'+c.f(r)+'</td>';}).join('')+'</tr>';}).join(''):'<tr><td colspan="'+cols.length+'">No data for this selection.</td></tr>')+
+    '</tbody></table>';
+  b.appendChild(w);
+}
+function tiles(list){
+  var d=document.createElement('div'); d.className='tiles';
+  d.innerHTML=list.map(function(t){return '<div class="tile"><div class="lab">'+t[0]+'</div><div class="big">'+t[1]+'</div><div class="chg">'+(t[2]||'')+'</div><div class="nt">'+(t[3]||'')+'</div></div>';}).join('');
+  $('#view').appendChild(d);
+}
+var heat=function(v,max){return v==null?'':'background:rgba(31,122,120,'+Math.min(.55,(v/max)*.55).toFixed(2)+')';};
+var NICE={ACTIVE:'Active',AT_RISK:'At risk',LAPSED:'Lapsed',LEAD:'Lead','true':'Opted in','false':'Opted out'};
+var nice=function(k){return NICE[k]||k;};
+var demoName=function(v){
+  if(!v) return 'Unknown';
+  var m=/^AGE_RANGE_(\d+)_(\d+)$/.exec(v); if(m) return m[1]+'–'+m[2];
+  if(v==='AGE_RANGE_65_UP') return '65+';
+  return v.replace(/^AGE_RANGE_/,'').replace(/_/g,' ').toLowerCase().replace(/^./,function(c){return c.toUpperCase();});
+};
+
+/* ---------- tabs ---------- */
+function headline(){
+  var S=D.s_sales_monthly, CH=D.s_channel_monthly, on=function(r){return r.channel==='online';}, off=function(r){return r.channel==='offline';};
+  var s12=sel(S.filter(on),L12), sp=sel(S.filter(on),P12);
+  var rev=sum(s12,'revenue'), revP=sum(sp,'revenue'), ord=sum(s12,'orders'), ordP=sum(sp,'orders');
+  var store=S.filter(off).filter(function(r){return mIdx(r.month)<=LAST;}), storeFrom=months(store)[0];
+  var ch12=sel(CH,L12), chP=sel(CH,P12);
+  var conv=ratio(sum(ch12,'purchases'),sum(ch12,'sessions')), convP=ratio(sum(chP,'purchases'),sum(chP,'sessions'));
+  var canc=ratio(sum(s12,'cancelled_value'),rev+sum(s12,'cancelled_value')), cancP=ratio(sum(sp,'cancelled_value'),revP+sum(sp,'cancelled_value'));
+  var sn=snap(), fq=sn.frequency||{}, lc=sn.lifecycle||{};
+  var base=(fq['1 order']||0)+(fq['2 orders']||0)+(fq['3-4 orders']||0)+(fq['5+ orders']||0);
+  var rep=ratio((fq['2 orders']||0)+(fq['3-4 orders']||0)+(fq['5+ orders']||0),base);
+  var J=D.s_journey_monthly.filter(function(r){return r.purchase_channel!=='Not identified';}), j12=sel(J,L12), jp=sel(J,P12);
+  var tc=topN(grp(j12,function(r){return r.purchase_channel;},function(r){return r.orders;}),1)[0]||['–',0];
+  var tcShare=ratio(tc[1],sum(j12,'orders')), tcP=ratio(sum(jp.filter(function(r){return r.purchase_channel===tc[0];}),'orders'),sum(jp,'orders'));
+  var SW=D.s_swatch_cohorts, sw12=sel(SW,L12), swp=sel(SW,P12);
+  var sw=ratio(sum(sw12,'bought_90d'),sum(sw12,'eligible_90d')), swP=ratio(sum(swp,'bought_90d'),sum(swp,'eligible_90d'));
+
+  /* what moved most */
+  var mv=[];
+  var C=D.s_category_monthly.filter(on), cc=grp(sel(C,L12),function(r){return r.category;},function(r){return r.revenue;}), cp=grp(sel(C,P12),function(r){return r.category;},function(r){return r.revenue;});
+  cc.forEach(function(v,k){var p=cp.get(k)||0; if(p>=100000) mv.push({x:chg(v,p),t:esc(k)+' revenue online',c:v,p:p,fmt:f.gbp});});
+  var cg=grp(ch12,function(r){return r.channel_group;},function(r){return r.purchases;}), cgp=grp(chP,function(r){return r.channel_group;},function(r){return r.purchases;});
+  cg.forEach(function(v,k){var p=cgp.get(k)||0; if(p>=200) mv.push({x:chg(v,p),t:esc(k)+' purchases',c:v,p:p,fmt:f.n});});
+  mv.sort(function(a,b){return Math.abs(b.x)-Math.abs(a.x);});
+  var b=panel('What moved most compared with last year','The biggest changes in the last 12 full months against the 12 before, online only. Categories need £100k of sales and channels 200 purchases a year before they count.',true);
+  b.innerHTML+='<ul class="moves">'+mv.slice(0,8).map(function(m){var up=m.x>=0; return '<li><span class="'+(up?'good':'bad')+'">'+(up?'▲ ':'▼ ')+Math.abs(m.x).toFixed(0)+'%</span> '+m.t+' ('+m.fmt(m.c)+' against '+m.fmt(m.p)+')</li>';}).join('')+'</ul>';
+
+  tiles([
+    ['Online sales, last 12 months',f.gbp(rev),chgHtml(rev,revP),'Valid orders, not swatch-only'],
+    ['Store sales since '+(storeFrom?lab(storeFrom):'launch'),f.gbp(sum(store,'revenue')),'','Store data starts Jun 2026, so no year-on-year yet'],
+    ['Active customers',f.n(lc.ACTIVE),'',f.n(lc.AT_RISK)+' at risk, '+f.n(lc.LAPSED)+' lapsed'],
+    ['Customers who ordered more than once',f.p(rep),'','All-time share of customers with 2+ orders'],
+    ['Average online order',f.gbp(ord?rev/ord:null),chgHtml(ord?rev/ord:0,ordP?revP/ordP:0),''],
+    ['Purchases per 100 visits',conv==null?'–':conv.toFixed(2),chgHtml(conv,convP),'Online sessions'],
+    ['Biggest purchase channel',esc(tc[0]),tcShare==null?'':f.p(tcShare,0)+' of identified orders'+(tcP==null?'':' (last year '+f.p(tcP,0)+')'),'GA4 identifies about 75–85% of orders'],
+    ['Swatch customers who then bought',f.p(sw),sw==null||swP==null?'':chgHtml(sw,swP),'Within 90 days of ordering swatches'],
+    ['Cancelled share of online order value',f.p(canc),chgHtml(canc,cancP,false),'Cancelled orders are excluded from sales'],
+    ['Lapsed and at-risk contacts',f.n((lc.LAPSED||0)+(lc.AT_RISK||0)),'','Ometria lifecycle, as of '+(sn._date||'–')]
+  ]);
+
+  var S2=shown(D.s_sales_monthly), ms=months(S2), by=function(c,m){return sum(S2.filter(function(r){return r.channel===c&&r.month.slice(0,7)===m;}),'revenue');};
+  chart('Sales by month','Valid orders, excluding swatch-only and cancelled.','bar',ms.map(lab),[{label:'Online',data:ms.map(function(m){return by('online',m);})},{label:'Store',data:ms.map(function(m){return by('offline',m);})}],{stacked:true,fmt:f.gbp});
+  var T=shown(D.s_customer_type_monthly), tm=months(T), tv=function(t,m){return sum(T.filter(function(r){return r.customer_type===t&&r.month.slice(0,7)===m;}),'orders');};
+  chart('New and returning customers’ orders','Orders from first-time and repeat customers. Before mid-2025 the split is approximate, because older first orders are not in the data.','bar',tm.map(lab),[{label:'New',data:tm.map(function(m){return tv('New',m);})},{label:'Returning',data:tm.map(function(m){return tv('Returning',m);})}],{stacked:true,fmt:f.n});
+}
+
+function customers(){
+  var sn=snap();
+  var CO=D.s_cohorts.slice().sort(function(a,b){return a.cohort_month<b.cohort_month?-1:1;});
+  var T=shown(D.s_customer_type_monthly), tm=months(T), tv=function(t,m){return sum(T.filter(function(r){return r.customer_type===t&&r.month.slice(0,7)===m;}),'customers');};
+  chart('New and returning customers by month','Customers placing an order that month.','bar',tm.map(lab),[{label:'New',data:tm.map(function(m){return tv('New',m);})},{label:'Returning',data:tm.map(function(m){return tv('Returning',m);})}],{stacked:true,fmt:f.n});
+  table('Do customers come back?','Share of each month’s first-time customers who ordered again within 90, 180 and 365 days. Only cohorts old enough to measure are shown.',
+    [{h:'First order month',f:function(r){return lab(r.cohort_month);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},
+     {h:'90 days',r:1,f:function(r){return f.p(ratio(r.repeat_90d,r.eligible_90d));},s:function(r){return heat(ratio(r.repeat_90d,r.eligible_90d),25);}},
+     {h:'180 days',r:1,f:function(r){return f.p(ratio(r.repeat_180d,r.eligible_180d));},s:function(r){return heat(ratio(r.repeat_180d,r.eligible_180d),25);}},
+     {h:'365 days',r:1,f:function(r){return f.p(ratio(r.repeat_365d,r.eligible_365d));},s:function(r){return heat(ratio(r.repeat_365d,r.eligible_365d),25);}}],CO);
+  var bands=[['0–30 days','second_0_30d'],['31–90 days','second_31_90d'],['91–180 days','second_91_180d'],['181–365 days','second_181_365d'],['Over a year','second_366d_plus']];
+  chart('How long until the second order','Customers who ordered again, by time since their first order.','bar',bands.map(function(b){return b[0];}),[{label:'Customers',data:bands.map(function(b){return sum(D.s_cohorts,b[1]);})}],{fmt:f.n});
+  var a=ordered(sn.frequency,['1 order','2 orders','3-4 orders','5+ orders']);
+  chart('Orders per customer','Ometria all-time order count, '+(sn._date||'')+'.','bar',a[0],[{label:'Customers',data:a[1]}],{fmt:f.n});
+  var lc=ordered(sn.lifecycle,['LEAD','ACTIVE','AT_RISK','LAPSED']);
+  chart('Lifecycle stage','Where contacts are in the customer lifecycle. The history of this chart builds up from the first daily snapshot.','bar',lc[0].map(nice),[{label:'Contacts',data:lc[1]}],{fmt:f.n});
+  var vb=ordered(sn.value_band,['Below average','Average','Above average','Well above average']);
+  chart('Spend band','Ometria’s ranking of customers by total spend.','bar',vb[0],[{label:'Contacts',data:vb[1]}],{fmt:f.n});
+  var ps=ordered(sn.predicted_12m_spend,['Lower than average','Average','Above average','Well above average']);
+  chart('Predicted spend over 12 months','Ometria’s prediction, for contacts who have ordered.','bar',ps[0],[{label:'Contacts',data:ps[1]}],{fmt:f.n});
+  var lp=D.s_lapsed_pool, order=['0-12 months','12-18 months','18-24 months','24-36 months','36+ months'];
+  var lps=order.map(function(k){return lp.filter(function(r){return r.months_since_last_order===k;})[0]||{customers:0,email_opted_in:0};});
+  chart('Time since last order','Customers by months since they last ordered. The lower bars show how many of them can be emailed.','bar',order,[{label:'Customers',data:lps.map(function(r){return r.customers;})},{label:'Opted in for email',data:lps.map(function(r){return r.email_opted_in;})}],{fmt:f.n,wide:true});
+}
+
+function products(){
+  var C=D.s_category_monthly, yr=yoyRows(C), c12=sel(yr,L12), cp=sel(yr,P12);
+  var yoyNote=state.channel==='offline'?'Store only, last 12 months.':'Online only, because store data starts in Jun 2026.';
+  function pair(key,n,title,note){
+    var m=grp(c12,function(r){return r[key];},function(r){return r.revenue;}), p=grp(cp,function(r){return r[key];},function(r){return r.revenue;});
+    var t=topN(m,n);
+    chart(title,note+' '+yoyNote,'bar',t.map(function(x){return x[0];}),[{label:'Last 12 months',data:t.map(function(x){return x[1];})},{label:'Previous 12 months',data:t.map(function(x){return p.get(x[0])||0;}),backgroundColor:'#c9b27c'}],{horizontal:true,fmt:f.gbp,h:Math.max(220,n*30)});
+  }
+  pair('department',8,'Sales by department','Revenue by department.');
+  pair('category',15,'Sales by category','Revenue by category.');
+  var CM=shown(chan(C)), ms=months(CM), tops=topN(grp(CM,function(r){return r.category;},function(r){return r.revenue;}),8).map(function(x){return x[0];});
+  var ds=tops.map(function(c){return {label:c,data:ms.map(function(m){return sum(CM.filter(function(r){return r.category===c&&r.month.slice(0,7)===m;}),'revenue');})};});
+  ds.push({label:'Other',data:ms.map(function(m,i){return sum(CM.filter(function(r){return r.month.slice(0,7)===m;}),'revenue')-ds.reduce(function(s,d){return s+d.data[i];},0);}),backgroundColor:'#c9c3b5'});
+  chart('Category mix by month','Revenue, with the eight biggest categories shown.','bar',ms.map(lab),ds,{stacked:true,fmt:f.gbp,wide:true,h:320});
+  pair('room',10,'Sales by room','Revenue by room, from the product feed.');
+  var share=ms.map(function(m){var rows=CM.filter(function(r){return r.month.slice(0,7)===m;}); return ratio(sum(rows,'sale_revenue'),sum(rows,'revenue'));});
+  chart('Share of sales sold on sale','Revenue on lines flagged as on sale, as a share of all revenue.','line',ms.map(lab),[{label:'On sale',data:share}],{fmt:function(v){return f.p(v,0);}});
+  var P=D.s_product_period, last=P.filter(function(r){return r.period==='last_12m';}), prev={}; P.filter(function(r){return r.period==='prior_12m';}).forEach(function(r){prev[r.product_title]=r;});
+  table('Best-selling products','Top 25 by revenue over the last 12 months, online and store. Products with fewer than 10 customers are left out.',
+    [{h:'Product',f:function(r){return esc(r.product_title);}},{h:'Category',f:function(r){return esc(r.category);}},{h:'Units',r:1,f:function(r){return f.n(r.units);}},{h:'Revenue',r:1,f:function(r){return f.gbp(r.revenue);}},
+     {h:'Change',r:1,f:function(r){var p=prev[r.product_title]; return p?f.p(chg(r.revenue,p.revenue),0):'New';}}],last.sort(function(a,b){return b.revenue-a.revenue;}).slice(0,25),{wide:true});
+  var AT=D.s_attribute_monthly.filter(function(r){return r.attribute===state.attr;}), a12=grp(sel(AT,L12),function(r){return r.value;},function(r){return r.revenue;}), ap=grp(sel(AT,P12),function(r){return r.value;},function(r){return r.revenue;}), at=topN(a12,12);
+  var cb=chart(state.attr==='colour'?'Colour trends':'Material trends','Revenue by '+state.attr+' for the last 12 months against the 12 before, online and store.','bar',at.map(function(x){return x[0];}),[{label:'Last 12 months',data:at.map(function(x){return x[1];})},{label:'Previous 12 months',data:at.map(function(x){return ap.get(x[0])||0;}),backgroundColor:'#c9b27c'}],{horizontal:true,fmt:f.gbp,h:380});
+  var seg=document.createElement('div'); seg.className='seg'; [['colour','Colour'],['material','Material']].forEach(function(o){var bt=document.createElement('button'); bt.type='button'; bt.textContent=o[1]; bt.setAttribute('aria-pressed',String(state.attr===o[0])); bt.onclick=function(){state.attr=o[0]; render();}; seg.appendChild(bt);}); cb.parentNode.insertBefore(seg,cb);
+  var NC=D.s_next_category.slice().sort(function(a,b){return b.customers-a.customers;}).slice(0,15);
+  table('What customers buy next','First category bought, then the category of the second order. Top 15 pairs.',[{h:'First order',f:function(r){return esc(r.first_category);}},{h:'Second order',f:function(r){return esc(r.second_category);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}}],NC);
+  var SW=shown(D.s_swatch_cohorts).filter(function(r){return r.eligible_90d>=10;});
+  chart('Swatch customers who go on to buy','Of customers who ordered swatches in each month, the share who bought within 90 days. Recent months are left out until they can be measured.','line',SW.map(function(r){return lab(r.month);}),[{label:'Bought within 90 days',data:SW.map(function(r){return ratio(r.bought_90d,r.eligible_90d);})},{label:'Bought within 30 days',data:SW.map(function(r){return ratio(r.bought_30d,r.eligible_30d);})}],{fmt:function(v){return f.p(v,0);}});
+  table('Most requested swatches','Last 12 months, by number of swatch lines ordered.',[{h:'Fabric',f:function(r){return esc(r.fabric);}},{h:'Swatch lines',r:1,f:function(r){return f.n(r.swatch_lines);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}}],D.s_swatch_fabrics.slice(0,15));
+  var AM=shown(D.s_attach_monthly), am=months(AM), rate=function(c){return am.map(function(m){var rows=AM.filter(function(r){return r.channel===c&&r.month.slice(0,7)===m;}); return ratio(sum(rows,'orders_with_care_plan'),sum(rows,'sale_orders'));});};
+  chart('Orders with a care plan','Share of orders that include a care plan.','line',am.map(lab),[{label:'Online',data:rate('online')},{label:'Store',data:rate('offline')}],{fmt:function(v){return f.p(v,0);}});
+}
+
+function journey(){
+  var CH=D.s_channel_monthly, c12=sel(CH,L12), cp=sel(CH,P12), J=D.s_journey_monthly;
+  var g12=grp(c12,function(r){return r.channel_group;},function(r){return r.sessions;}), pu12=grp(c12,function(r){return r.channel_group;},function(r){return r.purchases;}), pup=grp(cp,function(r){return r.channel_group;},function(r){return r.purchases;});
+  var rows=topN(g12,20).map(function(x){return {c:x[0],s:x[1],p:pu12.get(x[0])||0,pp:pup.get(x[0])||0};});
+  table('Channel scorecard','Online visits and purchases over the last 12 months, with purchases compared with the 12 before.',[{h:'Channel',f:function(r){return esc(r.c);}},{h:'Visits',r:1,f:function(r){return f.n(r.s);}},{h:'Purchases',r:1,f:function(r){return f.n(r.p);}},{h:'Per 100 visits',r:1,f:function(r){return (ratio(r.p,r.s)||0).toFixed(2);}},{h:'Purchases vs last year',r:1,f:function(r){return r.pp>=50?f.p(chg(r.p,r.pp),0):'–';}}],rows,{wide:true});
+  var JM=shown(J), ms=months(JM), pcs=topN(grp(JM.filter(function(r){return r.purchase_channel!=='Not identified';}),function(r){return r.purchase_channel;},function(r){return r.orders;}),6).map(function(x){return x[0];});
+  var ds=pcs.map(function(c){return {label:c,data:ms.map(function(m){return sum(JM.filter(function(r){return r.purchase_channel===c&&r.month.slice(0,7)===m;}),'orders');})};});
+  ds.push({label:'Other or not identified',backgroundColor:'#c9c3b5',data:ms.map(function(m,i){return sum(JM.filter(function(r){return r.month.slice(0,7)===m;}),'orders')-ds.reduce(function(s,d){return s+d.data[i];},0);})});
+  chart('Orders by purchase channel','The channel of the visit that ended in an order. “Not identified” covers orders GA4 could not link to a visit.','bar',ms.map(lab),ds,{stacked:true,fmt:f.n,wide:true,h:320});
+  var j12=sel(J,L12).filter(function(r){return r.purchase_channel!=='Not identified'&&r.first_touch_channel!=='Not identified';}), top6=function(key){return topN(grp(j12,function(r){return r[key];},function(r){return r.orders;}),6).map(function(x){return x[0];});};
+  var fts=top6('first_touch_channel'), pcs2=top6('purchase_channel'), cell={}; j12.forEach(function(r){var k=r.first_touch_channel+'|'+r.purchase_channel; cell[k]=(cell[k]||0)+r.orders;});
+  var mx=Math.max.apply(null,Object.keys(cell).map(function(k){return cell[k];}).concat([1]));
+  table('Where journeys start and where they end','Orders in the last 12 months. Rows are the first visit in the 90 days before the order, columns the visit that ended in the order.',[{h:'First visit via',f:function(r){return esc(r.ft);}}].concat(pcs2.map(function(pc){return {h:esc(pc),r:1,f:function(r){return f.n(cell[r.ft+'|'+pc]||0);},s:function(r){return heat(cell[r.ft+'|'+pc]||0,mx);}};})),fts.map(function(ft){return {ft:ft};}),{wide:true});
+  var d12=sel(J,L12), days=[['Same day','days_0'],['1–7 days','days_1_7'],['8–30 days','days_8_30'],['31–90 days','days_31_90']], visits=ratio(sum(d12,'sum_visits_90d'),sum(d12,'orders'))/100;
+  chart('Days from first visit to order','Orders by time since the first visit in the previous 90 days. On average '+(visits||0).toFixed(1)+' visits came before an order. One browser at a time is followed, so real consideration is longer than shown.','bar',days.map(function(d){return d[0];}),[{label:'Orders',data:days.map(function(d){return sum(d12,d[1]);})}],{fmt:f.n});
+  var fu=[['Visits','sessions'],['Product views','product_views'],['Added to basket','add_to_carts'],['Purchases','purchases']];
+  chart('From visit to purchase','Everything over the last 12 months, online.','bar',fu.map(function(x){return x[0];}),[{label:'Total',data:fu.map(function(x){return sum(c12,x[1]);})}],{horizontal:true,fmt:f.n,h:220});
+  var dv=grp(c12,function(r){return r.device;},function(r){return r.sessions;}), dvp=grp(c12,function(r){return r.device;},function(r){return r.purchases;});
+  table('Device','Last 12 months.',[{h:'Device',f:function(r){return esc(r.d);}},{h:'Visits',r:1,f:function(r){return f.n(r.s);}},{h:'Purchases',r:1,f:function(r){return f.n(r.p);}},{h:'Per 100 visits',r:1,f:function(r){return (ratio(r.p,r.s)||0).toFixed(2);}}],topN(dv,5).map(function(x){return {d:x[0],s:x[1],p:dvp.get(x[0])||0};}));
+  var ai=shown(CH.filter(function(r){return r.channel_group==='AI Assistant';})), am=months(ai);
+  chart('Visits from AI assistants','Visits arriving from AI assistants such as ChatGPT. Purchases over the period: '+f.n(sum(ai,'purchases'))+'.','line',am.map(lab),[{label:'Visits',data:am.map(function(m){return sum(ai.filter(function(r){return r.month.slice(0,7)===m;}),'sessions');})}],{fmt:f.n});
+  var S=sel(D.s_source_monthly,L12), sk=grp(S,function(r){return r.source+' / '+r.medium;},function(r){return r.purchases;}), ss=grp(S,function(r){return r.source+' / '+r.medium;},function(r){return r.sessions;});
+  table('Sources and mediums','Top 15 by purchases over the last 12 months.',[{h:'Source / medium',f:function(r){return esc(r.k);}},{h:'Visits',r:1,f:function(r){return f.n(r.s);}},{h:'Purchases',r:1,f:function(r){return f.n(r.p);}},{h:'Per 100 visits',r:1,f:function(r){return (ratio(r.p,r.s)||0).toFixed(2);}}],topN(sk,15).map(function(x){return {k:x[0],p:x[1],s:ss.get(x[0])||0};}));
+  var L=D.s_landing_period.filter(function(r){return r.period==='last_12m';}).sort(function(a,b){return b.purchases-a.purchases;}).slice(0,20);
+  table('Landing pages','The 20 entry pages with the most purchases in the last 12 months.',[{h:'Page',f:function(r){return esc(r.landing_path);}},{h:'Visits',r:1,f:function(r){return f.n(r.sessions);}},{h:'Purchases',r:1,f:function(r){return f.n(r.purchases);}}],L);
+  table('Time to buy by category','Online orders in the last 12 months that GA4 could follow. Days from the first visit in the previous 90 days.',[{h:'Category',f:function(r){return esc(r.category);}},{h:'Orders',r:1,f:function(r){return f.n(r.orders);}},{h:'Visits before buying',r:1,f:function(r){return f.n(r.avg_visits_90d);}},{h:'Median days',r:1,f:function(r){return f.n(r.median_days);}},{h:'75th percentile days',r:1,f:function(r){return f.n(r.p75_days);}}],D.s_time_to_buy_category.slice().sort(function(a,b){return b.orders-a.orders;}),{wide:true});
+  var nb=panel('Reading these numbers','',true); nb.innerHTML='<p class="note">GA4 links 74–85% of online orders to a visit in most months, and only 54–61% in Feb and Mar 2026, when purchase tracking was incomplete. Orders that cannot be linked appear as “not identified”. GA4 history starts on 14 Feb 2025.</p>';
+}
+
+function audTable(type,n,title,note){
+  var rows=D.s_audience_sizes.filter(function(r){return r.audience_type===type;}).sort(function(a,b){return b.contacts-a.contacts;}).slice(0,n);
+  table(title,note,[{h:'Audience',f:function(r){return esc(r.segment);}},{h:'Contacts',r:1,f:function(r){return f.n(r.contacts);}},{h:'Have ordered',r:1,f:function(r){return f.p(ratio(r.buyers,r.contacts),0);}},{h:'Opted in for email',r:1,f:function(r){return f.p(ratio(r.email_opted_in,r.contacts),0);}}],rows);
+}
+function audiences(){
+  var sn=snap(), A=D.s_audience_sizes, byType={}; A.forEach(function(r){var t=byType[r.audience_type]=byType[r.audience_type]||{n:0,m:0,b:0}; t.n++; t.m+=r.contacts; t.b+=r.buyers;});
+  var types=Object.keys(byType).sort(function(a,b){return byType[b].m-byType[a].m;});
+  table('Audiences by type','Ometria audiences grouped by what they are. Memberships count a contact once for each audience they are in.',[{h:'Type',f:function(r){return esc(r.t);}},{h:'Audiences',r:1,f:function(r){return f.n(byType[r.t].n);}},{h:'Memberships',r:1,f:function(r){return f.n(byType[r.t].m);}}],types.map(function(t){return {t:t};}));
+  var eb=ordered(sn.engagement_band,['New subscriber','No engagement','Low','Medium','High']);
+  chart('Email engagement','How actively contacts engage with email, as ranked by Ometria.','bar',eb[0],[{label:'Contacts',data:eb[1]}],{fmt:f.n});
+  audTable('Behavioural',12,'Largest behavioural audiences','Rule-based audiences that update themselves. “Have ordered” is the share who have ever bought.');
+  var oi=ordered(sn.email_optin,['true','false','Unknown']), os=ordered(sn.sms_optin,['true','false','Unknown']);
+  chart('Marketing consent','Contacts by consent, email and SMS.','bar',['Opted in','Opted out','Unknown'],[{label:'Email',data:['true','false','Unknown'].map(function(k){return (sn.email_optin||{})[k]||0;})},{label:'SMS',data:['true','false','Unknown'].map(function(k){return (sn.sms_optin||{})[k]||0;})}],{fmt:f.n});
+  var LG=shown(D.s_list_growth), lm=months(LG);
+  ['email','sms'].forEach(function(c){var v=function(t,m){return sum(LG.filter(function(r){return r.channel===c&&r.type===t&&r.month.slice(0,7)===m;}),'events');}; chart('List growth: '+(c==='email'?'email':'SMS'),'Sign-ups against unsubscribes each month.','bar',lm.map(lab),[{label:'Subscribed',data:lm.map(function(m){return v('subscribed',m);})},{label:'Unsubscribed',data:lm.map(function(m){return v('unsubscribed',m);}),backgroundColor:'#b5653a'}],{fmt:f.n});});
+  var EM=shown(D.s_email_monthly), em=months(EM), ev=function(t,fld,m){return sum(EM.filter(function(r){return r.event_type===t&&r.month.slice(0,7)===m;}),fld);};
+  chart('Email volume','Emails delivered, opened by a person (not a machine) and clicked.','line',em.map(lab),[{label:'Delivered',data:em.map(function(m){return ev('delivery','events',m);})},{label:'Human opens',data:em.map(function(m){return ev('open','human_events',m);})},{label:'Clicks',data:em.map(function(m){return ev('click','events',m);})}],{fmt:f.n,wide:true});
+  var cm=D.s_email_campaigns.slice().sort(function(a,b){return b.deliveries-a.deliveries;}).slice(0,25);
+  table('Email campaigns','The 25 biggest by emails delivered in the last 12 months. Orders are those Ometria attributes to the campaign.',[{h:'Campaign',f:function(r){return esc(r.campaign_title);}},{h:'Delivered',r:1,f:function(r){return f.n(r.deliveries);}},{h:'Human open rate',r:1,f:function(r){return f.p(ratio(r.human_opens,r.deliveries));}},{h:'Click rate',r:1,f:function(r){return f.p(ratio(r.clicks,r.deliveries));}},{h:'Orders',r:1,f:function(r){return f.n(r.orders);}},{h:'Revenue',r:1,f:function(r){return f.gbp(r.revenue);}}],cm,{wide:true});
+  audTable('Acquisition source',20,'Where contacts came from','Upload batches, opt-in lists, competitions and partner lists, by size. “Have ordered” shows how well each source turned into customers.');
+  audTable('Paid media feed',10,'Audiences sent to ad platforms','Lists used for paid media targeting and suppression.');
+  audTable('Lifecycle email (AI-built)',10,'Lifecycle email audiences','Audiences built for automated lifecycle emails.');
+}
+
+function places(){
+  var AP=D.s_area_profile, dim=function(d){return AP.filter(function(r){return r.dimension===d;});};
+  var rg=dim('region').sort(function(a,b){return b.customers-a.customers;});
+  chart('Customers by region','Customers who have ordered, by the region of their home postcode.','bar',rg.map(function(r){return r.value;}),[{label:'Customers',data:rg.map(function(r){return r.customers;})}],{horizontal:true,fmt:f.n,h:340});
+  var bo=['0-10 km','10-25 km','25-50 km','50-100 km','100+ km'], db=dim('distance_band');
+  chart('Distance to the nearest store','Customers by straight-line distance from home to the nearest of the 14 stores.','bar',bo,[{label:'Customers',data:bo.map(function(k){var r=db.filter(function(x){return x.value===k;})[0]; return r?r.customers:0;})}],{fmt:f.n});
+  var dbh=D.s_distance_behaviour.slice().sort(function(a,b){return bo.indexOf(a.distance_band)-bo.indexOf(b.distance_band);});
+  table('Do customers near a store behave differently?','Average orders and lifetime spend, and the share who have only ever bought online.',[{h:'Distance',f:function(r){return r.distance_band;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbp(r.avg_lifetime_value);}},{h:'Online only',r:1,f:function(r){return f.p(r.pct_online_only,0);}}],dbh);
+  var dc=dim('deprivation_decile').sort(function(a,b){return +a.value-+b.value;}), tot=sum(dc,'customers');
+  chart('Deprivation of customers’ neighbourhoods','Customers by decile of the Index of Multiple Deprivation (1 is the most deprived tenth of areas, 10 the least). If customers were spread evenly, each bar would match the line.','bar',dc.map(function(r){return r.value;}),[{label:'Customers',data:dc.map(function(r){return r.customers;})},{label:'Even spread',type:'line',data:dc.map(function(){return tot/10;}),borderColor:'#a67c37',backgroundColor:'#a67c37',borderDash:[5,4]}],{fmt:f.n});
+  var NV=D.s_area_vs_national;
+  chart('Customers’ neighbourhoods against England and Wales','Average Census 2021 profile of the neighbourhoods customers live in. Percentages of people (age) or households (the rest). England and Wales only.','bar',NV.map(function(r){return r.metric;}),[{label:'Your customers’ areas',data:NV.map(function(r){return r.customers;})},{label:'England and Wales',data:NV.map(function(r){return r.national;}),backgroundColor:'#c9b27c'}],{horizontal:true,fmt:function(v){return f.p(v,0);},h:360});
+  var ur=dim('urban_rural'), ls=dim('lifestyle_group').sort(function(a,b){return +a.value-+b.value;});
+  chart('Urban and rural','Customers by type of area.','bar',ur.map(function(r){return r.value;}),[{label:'Customers',data:ur.map(function(r){return r.customers;})}],{fmt:f.n,h:220});
+  chart('Lifestyle group of the area','Census 2021 area classification group, 1 to 8. Group names are not loaded yet.','bar',ls.map(function(r){return 'Group '+r.value;}),[{label:'Customers',data:ls.map(function(r){return r.customers;})}],{fmt:f.n,h:220});
+  var dm={age:'Age',gender:'Gender',parental_status:'Parental status'}, A=sel(D.s_ads_monthly.filter(function(r){return r.dimension===state.adDim;}),L12), vals=grp(A,function(r){return r.value;},function(r){return r.conversions;});
+  table('Who Google Ads reaches and converts','Last 12 months of Google Ads results by '+dm[state.adDim].toLowerCase()+'. Figures are as reported by Google, and many impressions have no known demographic.',[{h:dm[state.adDim],f:function(r){return demoName(r.v);}},{h:'Impressions',r:1,f:function(r){return f.n(r.i);}},{h:'Cost',r:1,f:function(r){return f.gbp(r.c);}},{h:'Conversions',r:1,f:function(r){return f.n(r.n);}},{h:'Value per £1',r:1,f:function(r){return r.c?(r.cv/r.c).toFixed(1):'–';}},{h:'Cost per conversion',r:1,f:function(r){return r.n?f.gbp(r.c/r.n):'–';}}],
+    topN(vals,12).map(function(x){var rs=A.filter(function(r){return r.value===x[0];}); return {v:x[0],i:sum(rs,'impressions'),c:sum(rs,'cost'),n:sum(rs,'conversions'),cv:sum(rs,'conversion_value')};}),
+    {wide:true,before:function(b){toggle(b,[['age','Age'],['gender','Gender'],['parental_status','Parental status']],'adDim');}});
+  table('Click and collect customers','Customers who had an order delivered to a store, against everyone else.',[{h:'Group',f:function(r){return r.group_name;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbp(r.avg_lifetime_value);}},{h:'Ordered again',r:1,f:function(r){return f.p(r.pct_repeat,0);}}],D.s_click_collect_customers);
+  table('Who each channel reaches','Average age and ownership profile of the neighbourhoods of customers who bought through each channel, last 12 months of orders.',[{h:'Purchase channel',f:function(r){return esc(r.purchase_channel);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Area aged 55–64',r:1,f:function(r){return f.p(r.avg_pct_55_64);}},{h:'Area aged 65+',r:1,f:function(r){return f.p(r.avg_pct_65_plus);}},{h:'Own outright',r:1,f:function(r){return f.p(r.avg_pct_own_outright);}}],D.s_channel_area.slice().sort(function(a,b){return b.customers-a.customers;}));
+  var nb=panel('Reading these numbers','',true); nb.innerHTML='<p class="note">Everything here describes neighbourhoods and groups of at least 10 customers, never individuals. Home area comes from the billing postcode, and customers whose order went to a store use their billing postcode, not the store’s.</p>';
+}
+
+function store(){
+  var S=shown(D.s_sales_monthly), ms=months(S), v=function(c,m,fld){return sum(S.filter(function(r){return r.channel===c&&r.month.slice(0,7)===m;}),fld);};
+  chart('Orders by channel','Valid orders, excluding swatch-only. Store data starts in Jun 2026.','bar',ms.map(lab),[{label:'Online',data:ms.map(function(m){return v('online',m,'orders');})},{label:'Store',data:ms.map(function(m){return v('offline',m,'orders');})}],{stacked:true,fmt:f.n});
+  var SC=D.s_store_catchment, bo=['0-10 km','10-25 km','25-50 km','50-100 km','100+ km'], stores=topN(grp(SC,function(r){return r.store;},function(r){return r.customers;}),20).map(function(x){return x[0];});
+  chart('Where each store’s customers live','Customers who bought in each store, by distance from home to the store they bought in, nearest to furthest.','bar',stores,bo.map(function(b){return {label:b,data:stores.map(function(s){return sum(SC.filter(function(r){return r.store===s&&r.distance_band===b;}),'customers');})};}),{stacked:true,horizontal:true,fmt:f.n,wide:true,h:Math.max(300,stores.length*28)});
+  var CC=shown(D.s_click_collect_monthly), cm=months(CC);
+  chart('Online orders delivered to a store','Share of online orders delivered to one of the 14 stores (click and collect).','line',cm.map(lab),[{label:'Share of online orders',data:CC.map(function(r){return ratio(r.to_store_orders,r.online_orders);})}],{fmt:function(v){return f.p(v,0);}});
+  table('Online, store, or both','Customers by where they have bought. Store data starts in Jun 2026.',[{h:'Pattern',f:function(r){return r.pattern;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbp(r.avg_lifetime_value);}}],D.s_omnichannel);
+  var on=S.filter(function(r){return r.channel==='online';}), onm=months(on);
+  chart('Cancelled online orders','Value of cancelled orders each month, and their share of online order value.','bar',onm.map(lab),[{label:'Cancelled value',data:onm.map(function(m){return sum(on.filter(function(r){return r.month.slice(0,7)===m;}),'cancelled_value');})},{label:'Share of order value',type:'line',yAxisID:'y1',data:onm.map(function(m){var rows=on.filter(function(r){return r.month.slice(0,7)===m;}); return ratio(sum(rows,'cancelled_value'),sum(rows,'revenue')+sum(rows,'cancelled_value'));}),borderColor:'#a67c37',backgroundColor:'#a67c37',fmt:function(v){return f.p(v,1);}}],{fmt:f.gbp,y1:function(v){return f.p(v,0);}});
+  var CX=sel(D.s_cancel_category,L12), cx=topN(grp(CX,function(r){return r.category;},function(r){return r.cancelled_value;}),10);
+  chart('What gets cancelled','Value of cancelled orders by category over the last 12 months.','bar',cx.map(function(x){return x[0];}),[{label:'Cancelled value',data:cx.map(function(x){return x[1];})}],{horizontal:true,fmt:f.gbp,h:320});
+  var C=D.s_category_monthly, first=months(C.filter(function(r){return r.channel==='offline'&&mIdx(r.month)<=LAST;}))[0], w=first?[mIdx(first),LAST]:L12, cw=sel(C,w);
+  var tot=function(c){return sum(cw.filter(function(r){return r.channel===c;}),'revenue');}, ct=topN(grp(cw,function(r){return r.category;},function(r){return r.revenue;}),10).map(function(x){return x[0];});
+  chart('Category mix: online against store','Share of each channel’s revenue by category, for the months since store data began'+(first?' ('+lab(first)+')':'')+'.','bar',ct,['online','offline'].map(function(c,i){return {label:i?'Store':'Online',data:ct.map(function(k){return ratio(sum(cw.filter(function(r){return r.channel===c&&r.category===k;}),'revenue'),tot(c));})};}),{horizontal:true,fmt:function(v){return f.p(v,0);},h:340});
+  var OM=sel(chan(D.s_order_mix),L12);
+  [['payment_method','Payment methods'],['shipping_method','Delivery methods']].forEach(function(p){var t=topN(grp(OM,function(r){return r[p[0]];},function(r){return r.orders;}),8); chart(p[1],'Orders over the last 12 months'+(state.channel==='all'?', online and store':'')+'.','bar',t.map(function(x){return x[0];}),[{label:'Orders',data:t.map(function(x){return x[1];})}],{horizontal:true,fmt:f.n,h:260});});
+  var OS=shown(chan(D.s_order_mix)), om=months(OS);
+  chart('Orders using a coupon','Share of orders placed with a coupon code.','line',om.map(lab),[{label:'Coupon orders',data:om.map(function(m){var rows=OS.filter(function(r){return r.month.slice(0,7)===m;}); return ratio(sum(rows.filter(function(r){return r.coupon==='Coupon';}),'orders'),sum(rows,'orders'));})}],{fmt:function(v){return f.p(v,0);}});
+  var WB=D.s_winback_pool, mo=['12-18 months','18-24 months','24+ months'], wc=topN(grp(WB,function(r){return r.last_category;},function(r){return r.customers;}),10).map(function(x){return x[0];});
+  chart('Win-back pool: customers who last ordered over 12 months ago','By the category of their last order and how long ago it was. About '+f.n(sum(WB,'customers'))+' customers in total, of whom '+f.n(sum(WB,'email_opted_in'))+' can be emailed.','bar',wc,mo.map(function(m){return {label:m,data:wc.map(function(c){return sum(WB.filter(function(r){return r.last_category===c&&r.months_since===m;}),'customers');})};}),{stacked:true,horizontal:true,fmt:f.n,wide:true,h:340});
+}
+
+/* ---------- shell ---------- */
+var VIEWS={headline:headline,customers:customers,products:products,journey:journey,audiences:audiences,places:places,store:store};
+function msg(html){clearView(); var d=document.createElement('div'); d.className='msg'; d.innerHTML=html; $('#view').appendChild(d);}
+function render(top){
+  document.querySelectorAll('#tabs button').forEach(function(b){if(b.dataset.tab===state.tab) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current');});
+  if(!token||!D.s_sales_monthly){return;}
+  clearView();
+  try{ VIEWS[state.tab](); }catch(e){ msg('<h2>This section could not be drawn</h2><p class="err">'+esc(e.message)+'</p>'); if(window.console) console.error(e); }
+  var sn=snap(); $('#asof').textContent='Barker & Stonehouse. Contact data as of '+(sn._date||'–')+'.';
+  $('#foot').innerHTML='<p>Sales are valid orders that are not swatch-only; cancelled orders are shown separately. Online orders start in Oct 2024 and store orders in Jun 2026. Customers are matched by email address. Groups with fewer than 10 customers are hidden. No online refunds or returns are held in Ometria.</p>';
+  if(top) window.scrollTo(0,0);
+}
+function buildTabs(){
+  var n=$('#tabs'); n.innerHTML='';
+  TABS.forEach(function(t){var b=document.createElement('button'); b.type='button'; b.dataset.tab=t[0]; b.textContent=t[1]; b.onclick=function(){state.tab=t[0]; render(true);}; n.appendChild(b);});
+}
+async function start(){
+  msg('<h2>Loading the numbers</h2><p>Reading the summary tables from BigQuery.</p>');
+  try{ await loadAll(); $('#signin').textContent='Reload data'; render(); }
+  catch(e){ msg('<h2>The data could not be loaded</h2><p class="err">'+esc(e.message)+'</p><p>Check that you are signed in with an account that can read the customer_insights dataset.</p>'); }
+}
+function signIn(){
+  if(window.__TEST_TOKEN__){token=window.__TEST_TOKEN__; return start();}
+  if(token){ return start(); }
+  if(!(window.google&&google.accounts&&google.accounts.oauth2)){ msg('<h2>Google sign-in has not loaded</h2><p>Check your connection and reload the page.</p>'); return; }
+  google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:'https://www.googleapis.com/auth/bigquery.readonly',callback:function(r){ if(r&&r.access_token){token=r.access_token; start();} else msg('<h2>Sign-in did not complete</h2><p>Try again.</p>'); }}).requestAccessToken({prompt:''});
+}
+if(window.Chart){ Chart.defaults.font.family='"Source Sans 3",system-ui,sans-serif'; Chart.defaults.color='#1c2740'; Chart.defaults.borderColor='#e4dece'; }
+$('#f-channel').onchange=function(e){state.channel=e.target.value; render();};
+$('#f-months').onchange=function(e){state.months=+e.target.value; render();};
+$('#signin').onclick=signIn;
+buildTabs(); render();
+msg('<h2>Customer insights</h2><p>How Barker &amp; Stonehouse customers behave, and what has changed since Oct 2024. Sign in with your Google account to load the data.</p>');
+window.App={start:start,render:render,state:state,D:D,VIEWS:VIEWS,signIn:signIn};
+})();
+</script>
+</body>
+</html>
