@@ -28,7 +28,7 @@ nav button[aria-current="page"]{color:var(--ink);border-bottom-color:var(--brass
 nav button:hover{color:var(--ink)}
 :focus-visible{outline:2px solid var(--teal);outline-offset:2px}
 main{padding:28px 32px 60px;max-width:1500px;margin:0 auto}
-#view{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:40px}
+#view{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr));gap:40px}
 .panel{border-top:1px solid #1c274055;padding-top:12px;min-width:0}
 .panel.wide{grid-column:1/-1}
 .panel h3{font-size:19px}
@@ -127,7 +127,8 @@ var months=function(rows){return Array.from(new Set(rows.map(function(r){return 
 var shown=function(rows){var n=state.months; return rows.filter(function(r){var i=mIdx(r.month); return i<=LAST&&(!n||i>LAST-n);});};
 var chan=function(rows){return state.channel==='all'?rows:rows.filter(function(r){return r.channel===state.channel;});};
 var yoyRows=function(rows){return rows.filter(function(r){return r.channel===(state.channel==='offline'?'offline':'online');});};
-var lab=function(s){return new Date(s.slice(0,7)+'-01T00:00:00').toLocaleString('en-GB',{month:'short',year:'2-digit'});};
+var lab=function(s){return new Date(s.slice(0,7)+'-01T00:00:00').toLocaleString('en-GB',{month:'short',year:'numeric'});};
+var dlab=function(s){return s?new Date(s+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}):'–';};
 var f={
   n:function(v){return v==null||isNaN(v)?'–':Math.round(v).toLocaleString('en-GB');},
   gbp:function(v){if(v==null||isNaN(v)) return '–'; var a=Math.abs(v); return (v<0?'-':'')+(a>=1e6?'£'+(a/1e6).toFixed(2)+'m':a>=1e3?'£'+Math.round(a/1e3)+'k':'£'+Math.round(a));},
@@ -239,20 +240,20 @@ function headline(){
     ['Biggest purchase channel',esc(tc[0]),tcShare==null?'':f.p(tcShare,0)+' of identified orders'+(tcP==null?'':' (last year '+f.p(tcP,0)+')'),'GA4 identifies about 75–85% of orders'],
     ['Swatch customers who then bought',f.p(sw),sw==null||swP==null?'':chgHtml(sw,swP),'Within 90 days of ordering swatches'],
     ['Cancelled share of online order value',f.p(canc),chgHtml(canc,cancP,false),'Cancelled orders are excluded from sales'],
-    ['Lapsed and at-risk contacts',f.n((lc.LAPSED||0)+(lc.AT_RISK||0)),'','Ometria lifecycle, as of '+(sn._date||'–')]
+    ['Lapsed and at-risk contacts',f.n((lc.LAPSED||0)+(lc.AT_RISK||0)),'','Ometria lifecycle, as of '+dlab(sn._date)]
   ]);
 
   var S2=shown(D.s_sales_monthly), ms=months(S2), by=function(c,m){return sum(S2.filter(function(r){return r.channel===c&&r.month.slice(0,7)===m;}),'revenue');};
-  chart('Sales by month','Valid orders, excluding swatch-only and cancelled.','bar',ms.map(lab),[{label:'Online',data:ms.map(function(m){return by('online',m);})},{label:'Store',data:ms.map(function(m){return by('offline',m);})}],{stacked:true,fmt:f.gbp});
+  chart('Sales by month','Valid orders, excluding swatch-only and cancelled. Store data starts in Jun 2026, which is why the bars grow from then.','bar',ms.map(lab),[{label:'Online',data:ms.map(function(m){return by('online',m);})},{label:'Store',data:ms.map(function(m){return by('offline',m);})}],{stacked:true,fmt:f.gbp});
   var T=shown(D.s_customer_type_monthly), tm=months(T), tv=function(t,m){return sum(T.filter(function(r){return r.customer_type===t&&r.month.slice(0,7)===m;}),'orders');};
-  chart('New and returning customers’ orders','Orders from first-time and repeat customers. Before mid-2025 the split is approximate, because older first orders are not in the data.','bar',tm.map(lab),[{label:'New',data:tm.map(function(m){return tv('New',m);})},{label:'Returning',data:tm.map(function(m){return tv('Returning',m);})}],{stacked:true,fmt:f.n});
+  chart('New and returning customers’ orders','Orders from first-time and repeat customers, including store orders from Jun 2026. Before mid-2025 the split is approximate, because older first orders are not in the data.','bar',tm.map(lab),[{label:'New',data:tm.map(function(m){return tv('New',m);})},{label:'Returning',data:tm.map(function(m){return tv('Returning',m);})}],{stacked:true,fmt:f.n});
 }
 
 function customers(){
   var sn=snap();
   var CO=D.s_cohorts.slice().sort(function(a,b){return a.cohort_month<b.cohort_month?-1:1;});
   var T=shown(D.s_customer_type_monthly), tm=months(T), tv=function(t,m){return sum(T.filter(function(r){return r.customer_type===t&&r.month.slice(0,7)===m;}),'customers');};
-  chart('New and returning customers by month','Customers placing an order that month.','bar',tm.map(lab),[{label:'New',data:tm.map(function(m){return tv('New',m);})},{label:'Returning',data:tm.map(function(m){return tv('Returning',m);})}],{stacked:true,fmt:f.n});
+  chart('New and returning customers by month','Customers placing an order that month, including store customers from Jun 2026.','bar',tm.map(lab),[{label:'New',data:tm.map(function(m){return tv('New',m);})},{label:'Returning',data:tm.map(function(m){return tv('Returning',m);})}],{stacked:true,fmt:f.n});
   table('Do customers come back?','Share of each month’s first-time customers who ordered again within 90, 180 and 365 days. Only cohorts old enough to measure are shown.',
     [{h:'First order month',f:function(r){return lab(r.cohort_month);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},
      {h:'90 days',r:1,f:function(r){return f.p(ratio(r.repeat_90d,r.eligible_90d));},s:function(r){return heat(ratio(r.repeat_90d,r.eligible_90d),25);}},
@@ -414,7 +415,7 @@ function render(top){
   if(!token||!D.s_sales_monthly){return;}
   clearView();
   try{ VIEWS[state.tab](); }catch(e){ msg('<h2>This section could not be drawn</h2><p class="err">'+esc(e.message)+'</p>'); if(window.console) console.error(e); }
-  var sn=snap(); $('#asof').textContent='Barker & Stonehouse. Contact data as of '+(sn._date||'–')+'.';
+  var sn=snap(); $('#asof').textContent='Barker & Stonehouse. Contact data as of '+dlab(sn._date)+'.';
   $('#foot').innerHTML='<p>Sales are valid orders that are not swatch-only; cancelled orders are shown separately. Online orders start in Oct 2024 and store orders in Jun 2026. Customers are matched by email address. Groups with fewer than 10 customers are hidden. No online refunds or returns are held in Ometria.</p>';
   if(top) window.scrollTo(0,0);
 }
