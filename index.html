@@ -79,9 +79,14 @@ footer p{max-width:100ch;margin:4px 0}
 'use strict';
 var PROJECT='commanding-air-450109-p0', DS=PROJECT+'.customer_insights', LOCATION='europe-west2';
 var CLIENT_ID='46227372300-rk63ag0caqgd7n12gjd0nt7f2qi7llqr.apps.googleusercontent.com';
-var TABLES=['s_ads_monthly','s_area_profile','s_area_vs_national','s_attach_monthly','s_attribute_monthly','s_audience_sizes','s_cancel_category','s_category_monthly','s_channel_area','s_channel_monthly','s_click_collect_customers','s_click_collect_monthly','s_cohorts','s_contact_snapshot','s_customer_type_monthly','s_distance_behaviour','s_email_campaigns','s_email_monthly','s_journey_monthly','s_landing_period','s_lapsed_pool','s_list_growth','s_next_category','s_omnichannel','s_order_mix','s_product_period','s_sales_monthly','s_source_monthly','s_store_catchment','s_swatch_cohorts','s_swatch_fabrics','s_time_to_buy_category','s_winback_pool'];
+var TABLES=['s_ads_monthly','s_area_penetration','s_area_profile','s_area_vs_national','s_attach_monthly','s_attribute_monthly','s_audience_sizes','s_cancel_category','s_category_monthly','s_channel_area','s_channel_monthly','s_click_collect_customers','s_click_collect_monthly','s_cohorts','s_contact_snapshot','s_customer_type_monthly','s_distance_behaviour','s_email_campaigns','s_email_monthly','s_journey_monthly','s_landing_period','s_lapsed_pool','s_list_growth','s_next_category','s_omnichannel','s_order_mix','s_product_period','s_sales_monthly','s_source_monthly','s_store_catchment','s_swatch_cohorts','s_swatch_fabrics','s_time_to_buy_category','s_winback_pool'];
 var TABS=[['headline','Headline'],['customers','Customers and retention'],['products','What people buy'],['journey','Journey and channels'],['audiences','Audiences and email'],['places','Where customers live'],['store','Store and online']];
-var D={}, token=null, charts=[], state={tab:'headline',channel:'all',months:12,attr:'colour',adDim:'age'};
+var D={}, token=null, charts=[], state={tab:'headline',channel:'all',months:12,attr:'colour',adDim:'age',store:'all',penDir:'top'};
+/* Store names, from Ometria Settings > Stores. ID 11 is the phone channel, not a shop. */
+var STORES={'12':'Darlington','13':'Stockton','14':'Knaresborough','15':'Metro','16':'Leeds','17':'Middlesbrough Outlet','19':'Nottingham','20':'Hull','21':'Battersea','22':'Hove','23':'Guildford','24':'Fenwick Newcastle','25':'Metro Outlet','27':'Jarrolds','34':'Fenwick Kingston'};
+var sName=function(id){id=String(id); return STORES[id]||('Store '+id);};
+/* Lifestyle group names: add as '1':'Name', once confirmed from the official ONS list. */
+var LIFESTYLE={'1':'Retired Professionals','2':'Suburbanites / Peri-Urbanites','3':'Multicultural / Educated Urbanites','4':'Low-Skilled Migrant / Student Communities','5':'Ethnically Diverse Suburban Professionals','6':'Baseline UK','7':'Semi- / Un-Skilled Workforce','8':'Legacy Communities'};
 var PAL=['#1c2740','#1f7a78','#a67c37','#5b7aa6','#7b5e8c','#8aa07a','#b5653a','#6b6b6b','#c9b27c','#3d9a96'];
 var $=function(s){return document.querySelector(s);};
 var esc=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
@@ -132,6 +137,7 @@ var dlab=function(s){return s?new Date(s+'T00:00:00').toLocaleDateString('en-GB'
 var f={
   n:function(v){return v==null||isNaN(v)?'–':Math.round(v).toLocaleString('en-GB');},
   gbp:function(v){if(v==null||isNaN(v)) return '–'; var a=Math.abs(v); return (v<0?'-':'')+(a>=1e6?'£'+(a/1e6).toFixed(2)+'m':a>=1e3?'£'+Math.round(a/1e3)+'k':'£'+Math.round(a));},
+  gbpx:function(v){return v==null||isNaN(v)?'–':'£'+Math.round(v).toLocaleString('en-GB');},
   p:function(v,d){return v==null||isNaN(v)?'–':v.toFixed(d==null?1:d)+'%';}
 };
 var ratio=function(a,b){return b?a/b*100:null;};
@@ -262,7 +268,7 @@ function customers(){
   var bands=[['0–30 days','second_0_30d'],['31–90 days','second_31_90d'],['91–180 days','second_91_180d'],['181–365 days','second_181_365d'],['Over a year','second_366d_plus']];
   chart('How long until the second order','Customers who ordered again, by time since their first order.','bar',bands.map(function(b){return b[0];}),[{label:'Customers',data:bands.map(function(b){return sum(D.s_cohorts,b[1]);})}],{fmt:f.n});
   var a=ordered(sn.frequency,['1 order','2 orders','3-4 orders','5+ orders']);
-  chart('Orders per customer','Ometria all-time order count, '+(sn._date||'')+'.','bar',a[0],[{label:'Customers',data:a[1]}],{fmt:f.n});
+  chart('Orders per customer','Ometria all-time order count, as of '+dlab(sn._date)+'.','bar',a[0],[{label:'Customers',data:a[1]}],{fmt:f.n});
   var lc=ordered(sn.lifecycle,['LEAD','ACTIVE','AT_RISK','LAPSED']);
   chart('Lifecycle stage','Where contacts are in the customer lifecycle. The history of this chart builds up from the first daily snapshot.','bar',lc[0].map(nice),[{label:'Contacts',data:lc[1]}],{fmt:f.n});
   var vb=ordered(sn.value_band,['Below average','Average','Above average','Well above average']);
@@ -300,7 +306,7 @@ function products(){
   var seg=document.createElement('div'); seg.className='seg'; [['colour','Colour'],['material','Material']].forEach(function(o){var bt=document.createElement('button'); bt.type='button'; bt.textContent=o[1]; bt.setAttribute('aria-pressed',String(state.attr===o[0])); bt.onclick=function(){state.attr=o[0]; render();}; seg.appendChild(bt);}); cb.parentNode.insertBefore(seg,cb);
   var NC=D.s_next_category.slice().sort(function(a,b){return b.customers-a.customers;}).slice(0,15);
   table('What customers buy next','First category bought, then the category of the second order. Top 15 pairs.',[{h:'First order',f:function(r){return esc(r.first_category);}},{h:'Second order',f:function(r){return esc(r.second_category);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}}],NC);
-  var SW=shown(D.s_swatch_cohorts).filter(function(r){return r.eligible_90d>=10;});
+  var SW=shown(D.s_swatch_cohorts).filter(function(r){return r.eligible_90d>=10;}).sort(function(a,b){return a.month<b.month?-1:a.month>b.month?1:0;});
   chart('Swatch customers who go on to buy','Of customers who ordered swatches in each month, the share who bought within 90 days. Recent months are left out until they can be measured.','line',SW.map(function(r){return lab(r.month);}),[{label:'Bought within 90 days',data:SW.map(function(r){return ratio(r.bought_90d,r.eligible_90d);})},{label:'Bought within 30 days',data:SW.map(function(r){return ratio(r.bought_30d,r.eligible_30d);})}],{fmt:function(v){return f.p(v,0);}});
   table('Most requested swatches','Last 12 months, by number of swatch lines ordered.',[{h:'Fabric',f:function(r){return esc(r.fabric);}},{h:'Swatch lines',r:1,f:function(r){return f.n(r.swatch_lines);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}}],D.s_swatch_fabrics.slice(0,15));
   var AM=shown(D.s_attach_monthly), am=months(AM), rate=function(c){return am.map(function(m){var rows=AM.filter(function(r){return r.channel===c&&r.month.slice(0,7)===m;}); return ratio(sum(rows,'orders_with_care_plan'),sum(rows,'sale_orders'));});};
@@ -367,19 +373,24 @@ function places(){
   var bo=['0-10 km','10-25 km','25-50 km','50-100 km','100+ km'], db=dim('distance_band');
   chart('Distance to the nearest store','Customers by straight-line distance from home to the nearest of the 14 stores.','bar',bo,[{label:'Customers',data:bo.map(function(k){var r=db.filter(function(x){return x.value===k;})[0]; return r?r.customers:0;})}],{fmt:f.n});
   var dbh=D.s_distance_behaviour.slice().sort(function(a,b){return bo.indexOf(a.distance_band)-bo.indexOf(b.distance_band);});
-  table('Do customers near a store behave differently?','Average orders and lifetime spend, and the share who have only ever bought online.',[{h:'Distance',f:function(r){return r.distance_band;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbp(r.avg_lifetime_value);}},{h:'Online only',r:1,f:function(r){return f.p(r.pct_online_only,0);}}],dbh);
+  table('Do customers near a store behave differently?','Average orders and lifetime spend, and the share who have only ever bought online.',[{h:'Distance',f:function(r){return r.distance_band;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbpx(r.avg_lifetime_value);}},{h:'Online only',r:1,f:function(r){return f.p(r.pct_online_only,0);}}],dbh);
   var dc=dim('deprivation_decile').sort(function(a,b){return +a.value-+b.value;}), tot=sum(dc,'customers');
   chart('Deprivation of customers’ neighbourhoods','Customers by decile of the Index of Multiple Deprivation (1 is the most deprived tenth of areas, 10 the least). If customers were spread evenly, each bar would match the line.','bar',dc.map(function(r){return r.value;}),[{label:'Customers',data:dc.map(function(r){return r.customers;})},{label:'Even spread',type:'line',data:dc.map(function(){return tot/10;}),borderColor:'#a67c37',backgroundColor:'#a67c37',borderDash:[5,4]}],{fmt:f.n});
   var NV=D.s_area_vs_national;
   chart('Customers’ neighbourhoods against England and Wales','Average Census 2021 profile of the neighbourhoods customers live in. Percentages of people (age) or households (the rest). England and Wales only.','bar',NV.map(function(r){return r.metric;}),[{label:'Your customers’ areas',data:NV.map(function(r){return r.customers;})},{label:'England and Wales',data:NV.map(function(r){return r.national;}),backgroundColor:'#c9b27c'}],{horizontal:true,fmt:function(v){return f.p(v,0);},h:360});
-  var ur=dim('urban_rural'), ls=dim('lifestyle_group').sort(function(a,b){return +a.value-+b.value;});
+  var ur=dim('urban_rural'), ls=dim('lifestyle_group').filter(function(r){return r.value!=null&&r.value!==''&&!isNaN(+r.value);}).sort(function(a,b){return +a.value-+b.value;});
   chart('Urban and rural','Customers by type of area.','bar',ur.map(function(r){return r.value;}),[{label:'Customers',data:ur.map(function(r){return r.customers;})}],{fmt:f.n,h:220});
-  chart('Lifestyle group of the area','Census 2021 area classification group, 1 to 8. Group names are not loaded yet.','bar',ls.map(function(r){return 'Group '+r.value;}),[{label:'Customers',data:ls.map(function(r){return r.customers;})}],{fmt:f.n,h:220});
+  chart('Lifestyle group of the area','Census 2021 area classification group, 1 to 8.'+(Object.keys(LIFESTYLE).length?'':' Group names are not loaded yet.')+' Customers with no matched postcode are left out.','bar',ls.map(function(r){return LIFESTYLE[r.value]||('Group '+r.value);}),[{label:'Customers',data:ls.map(function(r){return r.customers;})}],{horizontal:true,fmt:f.n,h:320});
+  var AN=(D.s_area_penetration||[]).filter(function(r){return r.region;});
+  var rgp=Array.from(grp(AN,function(r){return r.region;},function(r){return r.customers;}).entries()).map(function(e){var hh=sum(AN.filter(function(r){return r.region===e[0];}),'households'); return [e[0],hh?e[1]/hh*1000:0];}).sort(function(a,b){return b[1]-a[1];});
+  chart('Customers per 1,000 households, by region','Customers who have ordered, for every 1,000 households in the region (Census 2021). England and Wales only. Use it to compare areas, not as a share of the market.','bar',rgp.map(function(x){return x[0];}),[{label:'Customers per 1,000 households',data:rgp.map(function(x){return x[1];})}],{horizontal:true,fmt:function(v){return v.toFixed(1);},h:340});
+  var pen=AN.filter(function(r){return r.households>=10000;}).sort(function(a,b){return state.penDir==='top'?b.customers_per_1000_hh-a.customers_per_1000_hh:a.customers_per_1000_hh-b.customers_per_1000_hh;}).slice(0,15);
+  table('Where we are strongest and weakest','Local authorities with at least 10,000 households, by customers per 1,000 households. Areas with fewer than 10 customers are hidden, so the very weakest are not listed.',[{h:'Local authority',f:function(r){return esc(r.lad_name||r.lad_code);}},{h:'Region',f:function(r){return esc(r.region);}},{h:'Households',r:1,f:function(r){return f.n(r.households);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Per 1,000 households',r:1,f:function(r){return r.customers_per_1000_hh==null?'–':Number(r.customers_per_1000_hh).toFixed(1);}}],pen,{wide:true,before:function(b){toggle(b,[['top','Strongest'],['low','Weakest']],'penDir');}});
   var dm={age:'Age',gender:'Gender',parental_status:'Parental status'}, A=sel(D.s_ads_monthly.filter(function(r){return r.dimension===state.adDim;}),L12), vals=grp(A,function(r){return r.value;},function(r){return r.conversions;});
   table('Who Google Ads reaches and converts','Last 12 months of Google Ads results by '+dm[state.adDim].toLowerCase()+'. Figures are as reported by Google, and many impressions have no known demographic.',[{h:dm[state.adDim],f:function(r){return demoName(r.v);}},{h:'Impressions',r:1,f:function(r){return f.n(r.i);}},{h:'Cost',r:1,f:function(r){return f.gbp(r.c);}},{h:'Conversions',r:1,f:function(r){return f.n(r.n);}},{h:'Value per £1',r:1,f:function(r){return r.c?(r.cv/r.c).toFixed(1):'–';}},{h:'Cost per conversion',r:1,f:function(r){return r.n?f.gbp(r.c/r.n):'–';}}],
     topN(vals,12).map(function(x){var rs=A.filter(function(r){return r.value===x[0];}); return {v:x[0],i:sum(rs,'impressions'),c:sum(rs,'cost'),n:sum(rs,'conversions'),cv:sum(rs,'conversion_value')};}),
     {wide:true,before:function(b){toggle(b,[['age','Age'],['gender','Gender'],['parental_status','Parental status']],'adDim');}});
-  table('Click and collect customers','Customers who had an order delivered to a store, against everyone else.',[{h:'Group',f:function(r){return r.group_name;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbp(r.avg_lifetime_value);}},{h:'Ordered again',r:1,f:function(r){return f.p(r.pct_repeat,0);}}],D.s_click_collect_customers);
+  table('Click and collect customers','Customers who had an order delivered to a store, against everyone else.',[{h:'Group',f:function(r){return r.group_name;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbpx(r.avg_lifetime_value);}},{h:'Ordered again',r:1,f:function(r){return f.p(r.pct_repeat,0);}}],D.s_click_collect_customers);
   table('Who each channel reaches','Average age and ownership profile of the neighbourhoods of customers who bought through each channel, last 12 months of orders.',[{h:'Purchase channel',f:function(r){return esc(r.purchase_channel);}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Area aged 55–64',r:1,f:function(r){return f.p(r.avg_pct_55_64);}},{h:'Area aged 65+',r:1,f:function(r){return f.p(r.avg_pct_65_plus);}},{h:'Own outright',r:1,f:function(r){return f.p(r.avg_pct_own_outright);}}],D.s_channel_area.slice().sort(function(a,b){return b.customers-a.customers;}));
   var nb=panel('Reading these numbers','',true); nb.innerHTML='<p class="note">Everything here describes neighbourhoods and groups of at least 10 customers, never individuals. Home area comes from the billing postcode, and customers whose order went to a store use their billing postcode, not the store’s.</p>';
 }
@@ -387,11 +398,31 @@ function places(){
 function store(){
   var S=shown(D.s_sales_monthly), ms=months(S), v=function(c,m,fld){return sum(S.filter(function(r){return r.channel===c&&r.month.slice(0,7)===m;}),fld);};
   chart('Orders by channel','Valid orders, excluding swatch-only. Store data starts in Jun 2026.','bar',ms.map(lab),[{label:'Online',data:ms.map(function(m){return v('online',m,'orders');})},{label:'Store',data:ms.map(function(m){return v('offline',m,'orders');})}],{stacked:true,fmt:f.n});
-  var SC=D.s_store_catchment, bo=['0-10 km','10-25 km','25-50 km','50-100 km','100+ km'], stores=topN(grp(SC,function(r){return r.store;},function(r){return r.customers;}),20).map(function(x){return x[0];});
-  chart('Where each store’s customers live','Customers who bought in each store, by distance from home to the store they bought in, nearest to furthest.','bar',stores,bo.map(function(b){return {label:b,data:stores.map(function(s){return sum(SC.filter(function(r){return r.store===s&&r.distance_band===b;}),'customers');})};}),{stacked:true,horizontal:true,fmt:f.n,wide:true,h:Math.max(300,stores.length*28)});
+  var bo=['0-10 km','10-25 km','25-50 km','50-100 km','100+ km'], ALL=D.s_store_catchment||[];
+  var SC=ALL.filter(function(r){return String(r.store)!=='11';}), phone=sum(ALL.filter(function(r){return String(r.store)==='11';}),'orders');
+  var rowsFor=function(id){return SC.filter(function(r){return String(r.store)===id;});};
+  var near=function(rs){return ratio(sum(rs.filter(function(r){return r.distance_band==='0-10 km'||r.distance_band==='10-25 km';}),'customers'),sum(rs,'customers'));};
+  var ids=Array.from(new Set(SC.map(function(r){return String(r.store);})));
+  var summ=ids.map(function(id){var rs=rowsFor(id); return {id:id,name:sName(id),c:sum(rs,'customers'),o:sum(rs,'orders'),rev:sum(rs,'revenue'),near:near(rs)};}).sort(function(a,b){return b.c-a.c;});
+  if(state.store!=='all'&&ids.indexOf(state.store)<0) state.store='all';
+  var one=state.store!=='all', names=summ.map(function(x){return x.name;});
+  var sc=chart('Where each store’s customers live',
+    'Customers who bought in a store, by distance from home to that store. A customer who bought in two stores counts in both. Not affected by the channel filter.'+(phone?' Phone orders are left out because they have no shop.':''),
+    'bar',
+    one?bo:names,
+    one?[{label:sName(state.store),data:bo.map(function(b){return sum(rowsFor(state.store).filter(function(r){return r.distance_band===b;}),'customers');})}]
+       :bo.map(function(b){return {label:b,data:summ.map(function(x){return sum(rowsFor(x.id).filter(function(r){return r.distance_band===b;}),'customers');})};}),
+    {stacked:!one,horizontal:!one,fmt:f.n,wide:true,h:one?300:Math.max(300,summ.length*30)});
+  var pick=document.createElement('label'); pick.style.cssText='display:inline-flex;gap:8px;align-items:center;margin:0 0 10px;font-size:14px';
+  pick.innerHTML='Store <select id="f-store"><option value="all">All stores</option>'+summ.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(x){return '<option value="'+esc(x.id)+'"'+(x.id===state.store?' selected':'')+'>'+esc(x.name)+'</option>';}).join('')+'</select>';
+  sc.insertBefore(pick,sc.firstChild);
+  pick.querySelector('select').onchange=function(e){state.store=e.target.value; render();};
+  table('All stores compared','Customers who bought in each store, biggest first. “Within 25 km” is the share who live within 25 km of that store.',
+    [{h:'Store',f:function(r){return esc(r.name);}},{h:'Customers',r:1,f:function(r){return f.n(r.c);}},{h:'Orders',r:1,f:function(r){return f.n(r.o);}},{h:'Revenue',r:1,f:function(r){return f.gbp(r.rev);}},{h:'Revenue per customer',r:1,f:function(r){return r.c?f.gbpx(r.rev/r.c):'–';}},{h:'Within 25 km',r:1,f:function(r){return f.p(r.near,0);}}],
+    one?summ.filter(function(x){return x.id===state.store;}):summ,{wide:true});
   var CC=shown(D.s_click_collect_monthly), cm=months(CC);
   chart('Online orders delivered to a store','Share of online orders delivered to one of the 14 stores (click and collect).','line',cm.map(lab),[{label:'Share of online orders',data:CC.map(function(r){return ratio(r.to_store_orders,r.online_orders);})}],{fmt:function(v){return f.p(v,0);}});
-  table('Online, store, or both','Customers by where they have bought. Store data starts in Jun 2026.',[{h:'Pattern',f:function(r){return r.pattern;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbp(r.avg_lifetime_value);}}],D.s_omnichannel);
+  table('Online, store, or both','Customers by where they have bought. Store data starts in Jun 2026.',[{h:'Pattern',f:function(r){return r.pattern;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbpx(r.avg_lifetime_value);}}],D.s_omnichannel);
   var on=S.filter(function(r){return r.channel==='online';}), onm=months(on);
   chart('Cancelled online orders','Value of cancelled orders each month, and their share of online order value.','bar',onm.map(lab),[{label:'Cancelled value',data:onm.map(function(m){return sum(on.filter(function(r){return r.month.slice(0,7)===m;}),'cancelled_value');})},{label:'Share of order value',type:'line',yAxisID:'y1',data:onm.map(function(m){var rows=on.filter(function(r){return r.month.slice(0,7)===m;}); return ratio(sum(rows,'cancelled_value'),sum(rows,'revenue')+sum(rows,'cancelled_value'));}),borderColor:'#a67c37',backgroundColor:'#a67c37',fmt:function(v){return f.p(v,1);}}],{fmt:f.gbp,y1:function(v){return f.p(v,0);}});
   var CX=sel(D.s_cancel_category,L12), cx=topN(grp(CX,function(r){return r.category;},function(r){return r.cancelled_value;}),10);
