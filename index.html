@@ -79,7 +79,7 @@ footer p{max-width:100ch;margin:4px 0}
 'use strict';
 var PROJECT='commanding-air-450109-p0', DS=PROJECT+'.customer_insights', LOCATION='europe-west2';
 var CLIENT_ID='46227372300-rk63ag0caqgd7n12gjd0nt7f2qi7llqr.apps.googleusercontent.com';
-var TABLES=['s_ads_monthly','s_area_penetration','s_area_profile','s_area_vs_national','s_attach_monthly','s_attribute_monthly','s_audience_sizes','s_cancel_category','s_category_monthly','s_channel_area','s_channel_monthly','s_click_collect_customers','s_click_collect_monthly','s_cohorts','s_contact_snapshot','s_customer_type_monthly','s_distance_behaviour','s_email_campaigns','s_email_monthly','s_journey_monthly','s_landing_period','s_lifestyle_category','s_lifestyle_profile','s_lapsed_pool','s_list_growth','s_next_category','s_omnichannel','s_order_mix','s_product_period','s_sales_monthly','s_source_monthly','s_store_catchment','s_swatch_cohorts','s_swatch_fabrics','s_time_to_buy_category','s_winback_pool'];
+var TABLES=['s_ads_monthly','s_area_penetration','s_area_profile','s_area_vs_national','s_attach_monthly','s_attribute_monthly','s_audience_sizes','s_cancel_category','s_category_monthly','s_channel_area','s_channel_monthly','s_click_collect_customers','s_click_collect_monthly','s_cohorts','s_contact_snapshot','s_customer_type_monthly','s_distance_behaviour','s_email_campaigns','s_email_monthly','s_journey_monthly','s_landing_period','s_lifestyle_category','s_lifestyle_profile','s_lapsed_pool','s_list_growth','s_next_category','s_omnichannel','s_order_mix','s_product_period','s_sales_monthly','s_source_monthly','s_store_catchment','s_store_lifestyle','s_store_profile','s_swatch_cohorts','s_swatch_fabrics','s_time_to_buy_category','s_winback_pool'];
 var TABS=[['headline','Headline'],['customers','Customers and retention'],['products','What people buy'],['journey','Journey and channels'],['audiences','Audiences and email'],['places','Where customers live'],['store','Store and online']];
 var D={}, token=null, charts=[], state={tab:'headline',channel:'all',months:12,attr:'colour',adDim:'age',store:'all',penDir:'top',lg:'1'};
 /* Store names, from Ometria Settings > Stores. ID 11 is the phone channel, not a shop. */
@@ -435,6 +435,23 @@ function store(){
   table('All stores compared','Customers who bought in each store, biggest first. “Within 25 km” is the share who live within 25 km of that store.',
     [{h:'Store',f:function(r){return esc(r.name);}},{h:'Customers',r:1,f:function(r){return f.n(r.c);}},{h:'Orders',r:1,f:function(r){return f.n(r.o);}},{h:'Revenue',r:1,f:function(r){return f.gbp(r.rev);}},{h:'Revenue per customer',r:1,f:function(r){return r.c?f.gbpx(r.rev/r.c):'–';}},{h:'Within 25 km',r:1,f:function(r){return f.p(r.near,0);}}],
     one?summ.filter(function(x){return x.id===state.store;}):summ,{wide:true});
+  var SPf=D.s_store_profile||[], SLf=D.s_store_lifestyle||[];
+  var lgN=function(v){return LIFESTYLE[String(v)]||('Group '+v);};
+  if(SPf.length){
+    var spRows=SPf.map(function(r){return {name:sName(r.store),id:String(r.store),c:r.customers,imd:r.avg_imd_decile,urb:r.pct_urban,a65:r.pct_age_65_plus,own:r.pct_own_outright,soc:r.pct_social_rent,kids:r.pct_dependent_children};}).sort(function(a,b){return b.c-a.c;});
+    var wavg=function(k){var t=0,w=0; spRows.forEach(function(x){if(x[k]!=null){t+=x[k]*x.c; w+=x.c;}}); return w?t/w:null;};
+    var avgRow={name:'All stores (average)',id:'all',c:sum(spRows,'c'),imd:wavg('imd'),urb:wavg('urb'),a65:wavg('a65'),own:wavg('own'),soc:wavg('soc'),kids:wavg('kids')};
+    var rowsP=(one?spRows.filter(function(x){return x.id===state.store;}):spRows).concat([avgRow]);
+    var p1=function(v){return v==null?'–':Number(v).toFixed(1)+'%';};
+    table('Who each store’s customers are','Average Census 2021 profile of the neighbourhoods where each store’s customers live. England and Wales only. Percentages are of people (age) or households (the rest). The last row averages all stores.',
+      [{h:'Store',f:function(r){return esc(r.name);}},{h:'Customers',r:1,f:function(r){return f.n(r.c);}},{h:'Aged 65+',r:1,f:function(r){return p1(r.a65);}},{h:'Own outright',r:1,f:function(r){return p1(r.own);}},{h:'Rent socially',r:1,f:function(r){return p1(r.soc);}},{h:'Households with children',r:1,f:function(r){return p1(r.kids);}},{h:'Deprivation decile (1 most, 10 least)',r:1,f:function(r){return r.imd==null?'–':Number(r.imd).toFixed(1);}},{h:'Urban',r:1,f:function(r){return p1(r.urb);}}],rowsP,{wide:true});
+  }
+  if(SLf.length){
+    var lgIds=Array.from(new Set(SLf.map(function(r){return String(r.lifestyle_group);}))).sort(function(a,b){return +a-+b;});
+    var shareFor=function(rs){var t=sum(rs,'customers'); return lgIds.map(function(g){return t?sum(rs.filter(function(r){return String(r.lifestyle_group)===g;}),'customers')/t*100:0;});};
+    var allS=shareFor(SLf), oneS=one?shareFor(SLf.filter(function(r){return String(r.store)===state.store;})):null;
+    chart('Which lifestyle groups each store’s customers come from','Share of the store’s customers in each lifestyle group, against all stores together. Pick a store above to compare it. England and Wales only.','bar',lgIds.map(lgN),one?[{label:sName(state.store),data:oneS},{label:'All stores',data:allS}]:[{label:'All stores',data:allS}],{horizontal:true,fmt:function(v){return v.toFixed(0)+'%';},h:360,wide:true});
+  }
   var CC=shown(D.s_click_collect_monthly), cm=months(CC);
   chart('Online orders delivered to a store','Share of online orders delivered to one of the 14 stores (click and collect).','line',cm.map(lab),[{label:'Share of online orders',data:CC.map(function(r){return ratio(r.to_store_orders,r.online_orders);})}],{fmt:function(v){return f.p(v,0);}});
   table('Online, store, or both','Customers by where they have bought. Store data starts in Jun 2026.',[{h:'Pattern',f:function(r){return r.pattern;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbpx(r.avg_lifetime_value);}}],D.s_omnichannel);
