@@ -115,8 +115,14 @@ async function bq(sql){
   while(tok){ var p=await api(base+'/queries/'+job+'?location='+LOCATION+'&maxResults=10000&pageToken='+tok,{headers:h}); rows=rows.concat(p.rows||[]); tok=p.pageToken; }
   return rows.map(function(row){var o={}; fields.forEach(function(f,i){o[f.name]=cast(f.type,row.f[i].v);}); return o;});
 }
+var MISSING=[];
 async function loadAll(){
-  await Promise.all(TABLES.map(async function(t){ D[t]=await bq('SELECT * FROM `'+DS+'.'+t+'`'); }));
+  MISSING=[];
+  await Promise.all(TABLES.map(async function(t){
+    try{ D[t]=await bq('SELECT * FROM `'+DS+'.'+t+'`'); }
+    catch(e){ if(!token) throw e; D[t]=[]; MISSING.push(t); }
+  }));
+  if(MISSING.length===TABLES.length) throw new Error('None of the summary tables could be read.');
 }
 
 /* ---------- helpers ---------- */
@@ -176,7 +182,7 @@ function chart(title,note,type,labels,datasets,o){
   var hz=!!o.horizontal, yf=o.fmt||function(v){return v;};
   var cfg={type:type,data:{labels:labels,datasets:datasets.map(function(d,i){
       var ty=d.type||type;
-      return Object.assign({backgroundColor:PAL[i%PAL.length],borderColor:PAL[i%PAL.length],borderWidth:ty==='line'?2:0,pointRadius:ty==='line'?2:0,tension:.25},d);})},
+      return Object.assign({backgroundColor:PAL[i%PAL.length],borderColor:PAL[i%PAL.length],borderWidth:ty==='line'?2:0,pointRadius:ty==='line'?2:0,tension:0},d);})},
     options:{responsive:true,maintainAspectRatio:false,animation:false,indexAxis:hz?'y':'x',
       plugins:{legend:{display:datasets.length>1,position:'bottom'},tooltip:{callbacks:{label:function(c){var ff=c.dataset.fmt||yf; return (c.dataset.label?c.dataset.label+': ':'')+ff(hz?c.parsed.x:c.parsed.y);}}}},
       scales:hz?{x:{stacked:!!o.stacked,beginAtZero:true,ticks:{callback:yf}},y:{stacked:!!o.stacked,grid:{display:false}}}
@@ -267,14 +273,15 @@ function customers(){
      {h:'365 days',r:1,f:function(r){return f.p(ratio(r.repeat_365d,r.eligible_365d));},s:function(r){return heat(ratio(r.repeat_365d,r.eligible_365d),25);}}],CO);
   var bands=[['0–30 days','second_0_30d'],['31–90 days','second_31_90d'],['91–180 days','second_91_180d'],['181–365 days','second_181_365d'],['Over a year','second_366d_plus']];
   chart('How long until the second order','Customers who ordered again, by time since their first order.','bar',bands.map(function(b){return b[0];}),[{label:'Customers',data:bands.map(function(b){return sum(D.s_cohorts,b[1]);})}],{fmt:f.n});
-  var a=ordered(sn.frequency,['1 order','2 orders','3-4 orders','5+ orders']);
-  chart('Orders per customer','Ometria all-time order count, as of '+dlab(sn._date)+'.','bar',a[0],[{label:'Customers',data:a[1]}],{fmt:f.n});
+  var known=function(pr){var L=[],V=[],u=0; pr[0].forEach(function(k,i){ if(/^(unknown|null|none|)$/i.test(String(k).trim())) u+=Number(pr[1][i])||0; else {L.push(k); V.push(pr[1][i]);} }); return {L:L,V:V,note:u?' '+f.n(u)+' contacts with no value for this in Ometria are left out so the rest can be read.':''};};
+  var a=ordered(sn.frequency,['1 order','2 orders','3-4 orders','5+ orders']), ak=known(a);
+  chart('Orders per customer','Ometria all-time order count, as of '+dlab(sn._date)+'.'+ak.note,'bar',ak.L,[{label:'Customers',data:ak.V}],{fmt:f.n});
   var lc=ordered(sn.lifecycle,['LEAD','ACTIVE','AT_RISK','LAPSED']);
   chart('Lifecycle stage','Where contacts are in the customer lifecycle. The history of this chart builds up from the first daily snapshot.','bar',lc[0].map(nice),[{label:'Contacts',data:lc[1]}],{fmt:f.n});
   var vb=ordered(sn.value_band,['Below average','Average','Above average','Well above average']);
-  chart('Spend band','Ometria’s ranking of customers by total spend.','bar',vb[0],[{label:'Contacts',data:vb[1]}],{fmt:f.n});
+  var vbk=known(vb); chart('Spend band','Ometria’s ranking of customers by total spend.'+vbk.note,'bar',vbk.L,[{label:'Contacts',data:vbk.V}],{fmt:f.n});
   var ps=ordered(sn.predicted_12m_spend,['Lower than average','Average','Above average','Well above average']);
-  chart('Predicted spend over 12 months','Ometria’s prediction, for contacts who have ordered.','bar',ps[0],[{label:'Contacts',data:ps[1]}],{fmt:f.n});
+  var psk=known(ps); chart('Predicted spend over 12 months','Ometria’s prediction, for contacts who have ordered.'+psk.note,'bar',psk.L,[{label:'Contacts',data:psk.V}],{fmt:f.n});
   var lp=D.s_lapsed_pool, order=['0-12 months','12-18 months','18-24 months','24-36 months','36+ months'];
   var lps=order.map(function(k){return lp.filter(function(r){return r.months_since_last_order===k;})[0]||{customers:0,email_opted_in:0};});
   chart('Time since last order','Customers by months since they last ordered. The lower bars show how many of them can be emailed.','bar',order,[{label:'Customers',data:lps.map(function(r){return r.customers;})},{label:'Opted in for email',data:lps.map(function(r){return r.email_opted_in;})}],{fmt:f.n,wide:true});
@@ -293,10 +300,10 @@ function products(){
   var CM=shown(chan(C)), ms=months(CM), tops=topN(grp(CM,function(r){return r.category;},function(r){return r.revenue;}),8).map(function(x){return x[0];});
   var ds=tops.map(function(c){return {label:c,data:ms.map(function(m){return sum(CM.filter(function(r){return r.category===c&&r.month.slice(0,7)===m;}),'revenue');})};});
   ds.push({label:'Other',data:ms.map(function(m,i){return sum(CM.filter(function(r){return r.month.slice(0,7)===m;}),'revenue')-ds.reduce(function(s,d){return s+d.data[i];},0);}),backgroundColor:'#c9c3b5'});
-  chart('Category mix by month','Revenue, with the eight biggest categories shown.','bar',ms.map(lab),ds,{stacked:true,fmt:f.gbp,wide:true,h:320});
+  chart('Category mix by month','Revenue, with the eight biggest categories shown.'+(state.channel==='all'?' Online and store together; store data starts in Jun 2026, which is why the bars grow from then.':''),'bar',ms.map(lab),ds,{stacked:true,fmt:f.gbp,wide:true,h:320});
   pair('room',10,'Sales by room','Revenue by room, from the product feed.');
-  var share=ms.map(function(m){var rows=CM.filter(function(r){return r.month.slice(0,7)===m;}); return ratio(sum(rows,'sale_revenue'),sum(rows,'revenue'));});
-  chart('Share of sales sold on sale','Revenue on lines flagged as on sale, as a share of all revenue.','line',ms.map(lab),[{label:'On sale',data:share}],{fmt:function(v){return f.p(v,0);}});
+  var share=ms.map(function(m){var rows=CM.filter(function(r){return r.month.slice(0,7)===m;}); var sr=sum(rows,'sale_revenue'); return sr>0?ratio(sr,sum(rows,'revenue')):null;});
+  chart('Share of sales sold on sale','Revenue on lines flagged as on sale, as a share of all revenue. Months with no on-sale flag recorded are left blank, not shown as zero.','line',ms.map(lab),[{label:'On sale',data:share}],{fmt:function(v){return f.p(v,0);}});
   var P=D.s_product_period, last=P.filter(function(r){return r.period==='last_12m';}), prev={}; P.filter(function(r){return r.period==='prior_12m';}).forEach(function(r){prev[r.product_title]=r;});
   table('Best-selling products','Top 25 by revenue over the last 12 months, online and store. Products with fewer than 10 customers are left out.',
     [{h:'Product',f:function(r){return esc(r.product_title);}},{h:'Category',f:function(r){return esc(r.category);}},{h:'Units',r:1,f:function(r){return f.n(r.units);}},{h:'Revenue',r:1,f:function(r){return f.gbp(r.revenue);}},
@@ -334,7 +341,8 @@ function journey(){
   var d12=sel(J,L12), days=[['Same day','days_0'],['1–7 days','days_1_7'],['8–30 days','days_8_30'],['31–90 days','days_31_90']], visits=ratio(sum(d12,'sum_visits_90d'),sum(d12,'orders'))/100;
   chart('Days from first visit to order','Orders by time since the first visit in the previous 90 days. On average '+(visits||0).toFixed(1)+' visits came before an order. One browser at a time is followed, so real consideration is longer than shown.','bar',days.map(function(d){return d[0];}),[{label:'Orders',data:days.map(function(d){return sum(d12,d[1]);})}],{fmt:f.n});
   var fu=[['Visits','sessions'],['Product views','product_views'],['Added to basket','add_to_carts'],['Purchases','purchases']];
-  chart('From visit to purchase','Everything over the last 12 months, online.','bar',fu.map(function(x){return x[0];}),[{label:'Total',data:fu.map(function(x){return sum(c12,x[1]);})}],{horizontal:true,fmt:f.n,h:220});
+  var fv=sum(c12,'sessions');
+  table('From visit to purchase','Everything over the last 12 months, online. Product views count every view, so they can be higher than visits.',[{h:'Step',f:function(r){return r[0];}},{h:'Total',r:1,f:function(r){return f.n(sum(c12,r[1]));}},{h:'Per 100 visits',r:1,f:function(r){return fv?(sum(c12,r[1])/fv*100).toFixed(r[1]==='purchases'?2:1):'–';}}],fu);
   var dv=grp(c12,function(r){return r.device;},function(r){return r.sessions;}), dvp=grp(c12,function(r){return r.device;},function(r){return r.purchases;});
   table('Device','Last 12 months.',[{h:'Device',f:function(r){return esc(r.d);}},{h:'Visits',r:1,f:function(r){return f.n(r.s);}},{h:'Purchases',r:1,f:function(r){return f.n(r.p);}},{h:'Per 100 visits',r:1,f:function(r){return (ratio(r.p,r.s)||0).toFixed(2);}}],topN(dv,5).map(function(x){return {d:x[0],s:x[1],p:dvp.get(x[0])||0};}));
   var ai=shown(CH.filter(function(r){return r.channel_group==='AI Assistant';})), am=months(ai);
@@ -363,7 +371,8 @@ function audiences(){
   var LG=shown(D.s_list_growth), lm=months(LG);
   ['email','sms'].forEach(function(c){var v=function(t,m){return sum(LG.filter(function(r){return r.channel===c&&r.type===t&&r.month.slice(0,7)===m;}),'events');}; chart('List growth: '+(c==='email'?'email':'SMS'),'Sign-ups against unsubscribes each month.','bar',lm.map(lab),[{label:'Subscribed',data:lm.map(function(m){return v('subscribed',m);})},{label:'Unsubscribed',data:lm.map(function(m){return v('unsubscribed',m);}),backgroundColor:'#b5653a'}],{fmt:f.n});});
   var EM=shown(D.s_email_monthly), em=months(EM), ev=function(t,fld,m){return sum(EM.filter(function(r){return r.event_type===t&&r.month.slice(0,7)===m;}),fld);};
-  chart('Email volume','Emails delivered, opened by a person (not a machine) and clicked.','line',em.map(lab),[{label:'Delivered',data:em.map(function(m){return ev('delivery','events',m);})},{label:'Human opens',data:em.map(function(m){return ev('open','human_events',m);})},{label:'Clicks',data:em.map(function(m){return ev('click','events',m);})}],{fmt:f.n,wide:true});
+  var erate=function(t,fld){return em.map(function(m){return ratio(ev(t,fld,m),ev('delivery','events',m));});};
+  chart('Email volume and engagement','Emails delivered each month (bars), with the share opened by a person, not a machine, and the share clicked (lines, right-hand scale).','bar',em.map(lab),[{label:'Delivered',data:em.map(function(m){return ev('delivery','events',m);})},{label:'Human open rate',type:'line',yAxisID:'y1',data:erate('open','human_events'),borderColor:'#1f7a78',backgroundColor:'#1f7a78',fmt:function(v){return f.p(v,1);}},{label:'Click rate',type:'line',yAxisID:'y1',data:erate('click','events'),borderColor:'#a67c37',backgroundColor:'#a67c37',fmt:function(v){return f.p(v,1);}}],{fmt:f.n,wide:true,y1:function(v){return f.p(v,0);}});
   var cm=D.s_email_campaigns.slice().sort(function(a,b){return b.deliveries-a.deliveries;}).slice(0,25);
   table('Email campaigns','The 25 biggest by emails delivered in the last 12 months. Orders are those Ometria attributes to the campaign.',[{h:'Campaign',f:function(r){return esc(r.campaign_title);}},{h:'Delivered',r:1,f:function(r){return f.n(r.deliveries);}},{h:'Human open rate',r:1,f:function(r){return f.p(ratio(r.human_opens,r.deliveries));}},{h:'Click rate',r:1,f:function(r){return f.p(ratio(r.clicks,r.deliveries));}},{h:'Orders',r:1,f:function(r){return f.n(r.orders);}},{h:'Revenue',r:1,f:function(r){return f.gbp(r.revenue);}}],cm,{wide:true});
   audTable('Acquisition source',20,'Where contacts came from','Upload batches, opt-in lists, competitions and partner lists, by size. “Have ordered” shows how well each source turned into customers.');
@@ -376,7 +385,7 @@ function places(){
   var rg=dim('region').sort(function(a,b){return b.customers-a.customers;});
   chart('Customers by region','Customers who have ordered, by the region of their home postcode.','bar',rg.map(function(r){return r.value;}),[{label:'Customers',data:rg.map(function(r){return r.customers;})}],{horizontal:true,fmt:f.n,h:340});
   var bo=['0-10 km','10-25 km','25-50 km','50-100 km','100+ km'], db=dim('distance_band');
-  chart('Distance to the nearest store','Customers by straight-line distance from home to the nearest of the 14 stores.','bar',bo,[{label:'Customers',data:bo.map(function(k){var r=db.filter(function(x){return x.value===k;})[0]; return r?r.customers:0;})}],{fmt:f.n});
+  chart('Distance to the nearest store','Customers by straight-line distance from home to the nearest store.','bar',bo,[{label:'Customers',data:bo.map(function(k){var r=db.filter(function(x){return x.value===k;})[0]; return r?r.customers:0;})}],{fmt:f.n});
   var dbh=D.s_distance_behaviour.slice().sort(function(a,b){return bo.indexOf(a.distance_band)-bo.indexOf(b.distance_band);});
   table('Do customers near a store behave differently?','Average orders and lifetime spend, and the share who have only ever bought online.',[{h:'Distance',f:function(r){return r.distance_band;}},{h:'Customers',r:1,f:function(r){return f.n(r.customers);}},{h:'Orders each',r:1,f:function(r){return r.avg_orders;}},{h:'Lifetime spend',r:1,f:function(r){return f.gbpx(r.avg_lifetime_value);}},{h:'Online only',r:1,f:function(r){return f.p(r.pct_online_only,0);}}],dbh);
   var dc=dim('deprivation_decile').sort(function(a,b){return +a.value-+b.value;}), tot=sum(dc,'customers');
@@ -492,8 +501,8 @@ function store(){
   var C=D.s_category_monthly, first=months(C.filter(function(r){return r.channel==='offline'&&mIdx(r.month)<=LAST;}))[0], w=first?[mIdx(first),LAST]:L12, cw=sel(C,w);
   var tot=function(c){return sum(cw.filter(function(r){return r.channel===c;}),'revenue');}, ct=topN(grp(cw,function(r){return r.category;},function(r){return r.revenue;}),10).map(function(x){return x[0];});
   chart('Category mix: online against store','Share of each channel’s revenue by category, for the months since store data began'+(first?' ('+lab(first)+')':'')+'.','bar',ct,['online','offline'].map(function(c,i){return {label:i?'Store':'Online',data:ct.map(function(k){return ratio(sum(cw.filter(function(r){return r.channel===c&&r.category===k;}),'revenue'),tot(c));})};}),{horizontal:true,fmt:function(v){return f.p(v,0);},h:340});
-  var OM=sel(chan(D.s_order_mix),L12);
-  [['payment_method','Payment methods'],['shipping_method','Delivery methods']].forEach(function(p){var t=topN(grp(OM,function(r){return r[p[0]];},function(r){return r.orders;}),8); chart(p[1],'Orders over the last 12 months'+(state.channel==='all'?', online and store':'')+'.','bar',t.map(function(x){return x[0];}),[{label:'Orders',data:t.map(function(x){return x[1];})}],{horizontal:true,fmt:f.n,h:260});});
+  var OM=sel(chan(D.s_order_mix),L12), PAYN={cybersource_applepay:'Apple Pay',cybersource_googlepay:'Google Pay',paypal_express:'PayPal',storepickup_storepickup:'Collect in store',free:'No payment (free order)',Unknown:'Not recorded'}, payName=function(k){return PAYN[k]||k;};
+  [['payment_method','Payment methods'],['shipping_method','Delivery methods']].forEach(function(p){var t=topN(grp(OM,function(r){return r[p[0]];},function(r){return r.orders;}),8); chart(p[1],'Orders over the last 12 months'+(state.channel==='all'?', online and store':'')+'.','bar',t.map(function(x){return payName(x[0]);}),[{label:'Orders',data:t.map(function(x){return x[1];})}],{horizontal:true,fmt:f.n,h:260});});
   var OS=shown(chan(D.s_order_mix)), om=months(OS);
   chart('Orders using a coupon','Share of orders placed with a coupon code.','line',om.map(lab),[{label:'Coupon orders',data:om.map(function(m){var rows=OS.filter(function(r){return r.month.slice(0,7)===m;}); return ratio(sum(rows.filter(function(r){return r.coupon==='Coupon';}),'orders'),sum(rows,'orders'));})}],{fmt:function(v){return f.p(v,0);}});
   var WB=D.s_winback_pool, mo=['12-18 months','18-24 months','24+ months'], wc=topN(grp(WB,function(r){return r.last_category;},function(r){return r.customers;}),10).map(function(x){return x[0];});
@@ -510,6 +519,7 @@ function render(top){
   try{ VIEWS[state.tab](); }catch(e){ msg('<h2>This section could not be drawn</h2><p class="err">'+esc(e.message)+'</p>'); if(window.console) console.error(e); }
   var sn=snap(); $('#asof').textContent='Barker & Stonehouse. Contact data as of '+dlab(sn._date)+'.';
   $('#foot').innerHTML='<p>Sales are valid orders that are not swatch-only; cancelled orders are shown separately. Online orders start in Oct 2024 and store orders in Jun 2026. Customers are matched by email address. Groups with fewer than 10 customers are hidden. No online refunds or returns are held in Ometria.</p>';
+  if(MISSING.length){ var w=document.createElement('p'); w.className='note'; w.style.cssText='grid-column:1/-1;margin:0 0 4px'; w.textContent='Some tables could not be read, so a few panels may be empty: '+MISSING.join(', ')+'.'; var vw=$('#view'); vw.insertBefore(w,vw.firstChild); }
   if(top) window.scrollTo(0,0);
 }
 function buildTabs(){
