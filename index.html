@@ -131,6 +131,15 @@ var L12=[LAST-11,LAST], P12=[LAST-23,LAST-12];
 var mIdx=function(s){return +s.slice(0,4)*12+ +s.slice(5,7)-1;};
 var inR=function(r,w){var i=mIdx(r.month); return i>=w[0]&&i<=w[1];};
 var sel=function(rows,w){return rows.filter(function(r){return inR(r,w);});};
+/* months in the last 12 that also have a full month of data a year earlier (the first month of data is treated as partial) */
+var likeFor=function(rows){
+  var idx=rows.map(function(r){return mIdx(r.month);}); if(!idx.length) return {cur:[],prev:[],n:0,label:''};
+  var first=Math.min.apply(null,idx), have=new Set(idx), ms=[];
+  for(var i=L12[0];i<=L12[1];i++){ if(have.has(i)&&have.has(i-12)&&i-12>first) ms.push(i); }
+  var set=new Set(ms), pset=new Set(ms.map(function(i){return i-12;}));
+  var nm=function(i){return new Date(Math.floor(i/12),i%12,1).toLocaleString('en-GB',{month:'short'});};
+  return {cur:rows.filter(function(r){return set.has(mIdx(r.month));}),prev:rows.filter(function(r){return pset.has(mIdx(r.month));}),n:ms.length,label:ms.length&&ms.length<12?nm(ms[0])+' to '+nm(ms[ms.length-1]):''};
+};
 var sum=function(rows,f){return rows.reduce(function(s,r){return s+(Number(r[f])||0);},0);};
 var grp=function(rows,kf,vf){var m=new Map(); rows.forEach(function(r){var k=kf(r); m.set(k,(m.get(k)||0)+(Number(vf(r))||0));}); return m;};
 var topN=function(m,n){return Array.from(m.entries()).sort(function(a,b){return b[1]-a[1];}).slice(0,n);};
@@ -236,10 +245,10 @@ function headline(){
   var mv=[];
   var C=D.s_category_monthly.filter(on), cc=grp(sel(C,L12),function(r){return r.category;},function(r){return r.revenue;}), cp=grp(sel(C,P12),function(r){return r.category;},function(r){return r.revenue;});
   cc.forEach(function(v,k){var p=cp.get(k)||0; if(p>=100000) mv.push({x:chg(v,p),t:esc(k)+' revenue online',c:v,p:p,fmt:f.gbp});});
-  var cg=grp(ch12,function(r){return r.channel_group;},function(r){return r.purchases;}), cgp=grp(chP,function(r){return r.channel_group;},function(r){return r.purchases;});
-  cg.forEach(function(v,k){var p=cgp.get(k)||0; if(p>=200) mv.push({x:chg(v,p),t:esc(k)+' purchases',c:v,p:p,fmt:f.n});});
+  var lf=likeFor(CH), cg=grp(lf.cur,function(r){return r.channel_group;},function(r){return r.purchases;}), cgp=grp(lf.prev,function(r){return r.channel_group;},function(r){return r.purchases;});
+  cg.forEach(function(v,k){var p=cgp.get(k)||0; if(p>=200) mv.push({x:chg(v,p),t:esc(k)+' purchases'+(lf.label?', '+lf.label:''),c:v,p:p,fmt:f.n});});
   mv.sort(function(a,b){return Math.abs(b.x)-Math.abs(a.x);});
-  var b=panel('What moved most compared with last year','The biggest changes in the last 12 full months against the 12 before, online only. Categories need £100k of sales and channels 200 purchases a year before they count.',true);
+  var b=panel('What moved most compared with last year','The biggest changes in the last 12 full months against the 12 before, online only. Categories need £100k of sales and channels 200 purchases before they count.'+(lf.label?' Channel figures only compare '+lf.label+', the months GA4 has in both years; GA4 also missed some purchases in Feb and Mar 2026, so treat channel falls with care.':''),true);
   b.innerHTML+='<ul class="moves">'+mv.slice(0,8).map(function(m){var up=m.x>=0; return '<li><span class="'+(up?'good':'bad')+'">'+(up?'▲ ':'▼ ')+Math.abs(m.x).toFixed(0)+'%</span> '+m.t+' ('+m.fmt(m.c)+' against '+m.fmt(m.p)+')</li>';}).join('')+'</ul>';
 
   tiles([
@@ -328,8 +337,9 @@ function products(){
 function journey(){
   var CH=D.s_channel_monthly, c12=sel(CH,L12), cp=sel(CH,P12), J=D.s_journey_monthly;
   var g12=grp(c12,function(r){return r.channel_group;},function(r){return r.sessions;}), pu12=grp(c12,function(r){return r.channel_group;},function(r){return r.purchases;}), pup=grp(cp,function(r){return r.channel_group;},function(r){return r.purchases;});
-  var rows=topN(g12,20).map(function(x){return {c:x[0],s:x[1],p:pu12.get(x[0])||0,pp:pup.get(x[0])||0};});
-  table('Channel scorecard','Online visits and purchases over the last 12 months, with purchases compared with the 12 before.',[{h:'Channel',f:function(r){return esc(r.c);}},{h:'Visits',r:1,f:function(r){return f.n(r.s);}},{h:'Purchases',r:1,f:function(r){return f.n(r.p);}},{h:'Per 100 visits',r:1,f:function(r){return (ratio(r.p,r.s)||0).toFixed(2);}},{h:'Purchases vs last year',r:1,f:function(r){return r.pp>=50?f.p(chg(r.p,r.pp),0):'–';}}],rows,{wide:true});
+  var lfj=likeFor(CH), plc=grp(lfj.cur,function(r){return r.channel_group;},function(r){return r.purchases;}), plp=grp(lfj.prev,function(r){return r.channel_group;},function(r){return r.purchases;}), totP=sum(c12,'purchases');
+  var rows=topN(g12,20).map(function(x){return {c:x[0],s:x[1],p:pu12.get(x[0])||0,pl:plc.get(x[0])||0,pp:plp.get(x[0])||0};});
+  table('Channel scorecard','Online visits and purchases over the last 12 months.'+(lfj.label?' The last column only compares '+lfj.label+', the months GA4 has in both years. GA4 missed some purchases in Feb and Mar 2026, and Unassigned purchases dropped sharply from Sep 2025 when tracking changed, so read the changes with care.':' Purchases are compared with the 12 months before.'),[{h:'Channel',f:function(r){return esc(r.c);}},{h:'Visits',r:1,f:function(r){return f.n(r.s);}},{h:'Purchases',r:1,f:function(r){return f.n(r.p);}},{h:'Per 100 visits',r:1,f:function(r){return (ratio(r.p,r.s)||0).toFixed(2);}},{h:'Share of purchases',r:1,f:function(r){return f.p(ratio(r.p,totP),1);}},{h:'Purchases vs last year',r:1,f:function(r){return r.pp>=50?f.p(chg(r.pl,r.pp),0):'–';}}],rows,{wide:true});
   var JM=shown(J), ms=months(JM), pcs=topN(grp(JM.filter(function(r){return r.purchase_channel!=='Not identified';}),function(r){return r.purchase_channel;},function(r){return r.orders;}),6).map(function(x){return x[0];});
   var ds=pcs.map(function(c){return {label:c,data:ms.map(function(m){return sum(JM.filter(function(r){return r.purchase_channel===c&&r.month.slice(0,7)===m;}),'orders');})};});
   ds.push({label:'Other or not identified',backgroundColor:'#c9c3b5',data:ms.map(function(m,i){return sum(JM.filter(function(r){return r.month.slice(0,7)===m;}),'orders')-ds.reduce(function(s,d){return s+d.data[i];},0);})});
